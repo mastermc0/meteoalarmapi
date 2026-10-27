@@ -33,17 +33,55 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
+def parse_polygon(text):
+    """CAP polygon text ("lat,lon lat,lon ...") as a list of (lat, lon)"""
+    points = []
+    for pair in (text or "").split():
+        try:
+            lat, lon = pair.split(",")
+            points.append((float(lat), float(lon)))
+        except ValueError:
+            continue
+    return points
+
+
+def point_in_polygon(point, polygon):
+    """Ray casting on lat/lon, treated as flat: fine for warning-sized areas"""
+    if len(polygon) < 3:
+        return False
+    lat, lon = point
+    inside = False
+    for (lat1, lon1), (lat2, lon2) in zip(polygon, polygon[1:] + polygon[:1]):
+        if (lat1 > lat) != (lat2 > lat):
+            crossing = lon1 + (lat - lat1) * (lon2 - lon1) / (lat2 - lat1)
+            if lon < crossing:
+                inside = not inside
+    return inside
+
+
 class Meteoalert:
 
     endpoint = "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-{0}"
 
-    def __init__(self, country, province, language="en-GB"):
+    def __init__(self, country, province=None, language="en-GB",
+                 latitude=None, longitude=None):
+        """Alerts for a province (name or EMMA_ID code), a point, or both.
+
+        latitude/longitude match alerts whose area polygon contains the point,
+        for countries such as Norway whose feeds have no named provinces. With
+        both, an alert matching either is included.
+        """
+        if (latitude is None) != (longitude is None):
+            raise ValueError("latitude and longitude must be given together")
+        if province is None and latitude is None:
+            raise ValueError("a province or a latitude and longitude is required")
         self.country = country.lower()
         self.province = province
         self.language = language
+        self.point = None if latitude is None else (float(latitude), float(longitude))
 
     def get_alert(self):
-        """The most severe alert for the province, or {} when there is none.
+        """The most severe alert for the location, or {} when there is none.
 
         See get_alerts() for the order.
         """
@@ -51,7 +89,7 @@ class Meteoalert:
         return alerts[0] if alerts else {}
 
     def get_alerts(self, include_expired=True):
-        """Every alert for the province, most severe first.
+        """Every alert for the location, most severe first.
 
         Unexpired alerts come first, then the highest awareness level (or CAP
         severity when there is none). Equally ranked alerts keep feed order.
@@ -69,7 +107,8 @@ class Meteoalert:
         # pointing at the same CAP document, so fetch each one once.
         seen = set()
         for entry in entries:
-            if not self.is_location_match(entry, self.province):
+            if not (self.province is not None and self.is_location_match(entry, self.province)
+                    or self.point is not None and self.is_point_match(entry, self.point)):
                 continue
             links = entry.get("link", [])
             if not isinstance(links, list):
@@ -147,6 +186,14 @@ class Meteoalert:
         # then by areaCode
         geocode = entry.get("cap:geocode")
         return isinstance(geocode, dict) and geocode.get("value") == province
+
+    @staticmethod
+    def is_point_match(entry, point):
+        """Whether (lat, lon) is inside any of the entry's cap:polygon areas"""
+        polygons = entry.get("cap:polygon") or []
+        if not isinstance(polygons, list):
+            polygons = [polygons]
+        return any(point_in_polygon(point, parse_polygon(text)) for text in polygons)
 
     def _fetch(self, url, missing_ok=False):
         """The response text, or None for a 404/410 when missing_ok"""
