@@ -1,0 +1,39 @@
+# Publishes to TestPyPI on demand (Actions → testpypi → Run workflow), to try a
+# release before the real one. Uses trusted publishing: the TestPyPI project
+# must list this repository and workflow as a publisher, with environment
+# "testpypi". TestPyPI won't accept the same version twice.
+name: testpypi
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[test]" build
+      - run: pytest tests
+      - run: python -m build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
