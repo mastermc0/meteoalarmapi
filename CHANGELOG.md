@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## meteoalarmapi 0.5.0 - unreleased
 - Added `latitude`/`longitude` to match alerts whose area polygon contains a point, for feeds without provinces such as Norway (meteoalert-api#35). `province` is now optional.
+- Added `update_geocodes()` and `Meteoalert(geocodes=...)` to match a point against areas given only as EMMA_ID codes, as most feeds do. It downloads MeteoAlarm's geocodes file once, keeps only the point's codes, and checks for a newer file at most monthly (daily when `geocodes_outdated` is set).
 
 ## meteoalarmapi 0.4.0 - unreleased
 First release of the maintained fork, published as `meteoalarmapi`.
