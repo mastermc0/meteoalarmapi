@@ -29,7 +29,9 @@ MULTIPLE = (
 NORWAY = ("ef68e1fd", "7be0d389", "15082db6")
 # geocodes_sample.json is a made-up excerpt of MeteoAlarm's geocodes file in
 # the same format: boxes for Northern Ireland (UK108), Wales (UK117, with a
-# hole and Anglesey as a second polygon) and Haute Savoie (FR718).
+# hole and Anglesey as a second polygon), Haute Savoie (FR718), a Lithuanian
+# county with a municipality inside it (LT001, LT049), as the real file has,
+# and two Irish areas whose codes don't all start with the country (EI04, IE001).
 BELFAST = (54.597, -5.930)
 UK_CODES = ["UK101", "UK102", "UK103", "UK104", "UK105", "UK107", "UK108", "UK109",
             "UK110", "UK111", "UK112", "UK113", "UK114", "UK115", "UK117"]
@@ -320,6 +322,15 @@ class TestMeteoalert(unittest.TestCase):
         # a point in no area, such as at sea, knows no codes either
         self.assertEqual(resolve_geocodes(47.0, -5.0, text, "v")["known"], [])
 
+        # Lithuania has municipalities inside counties: warnings for either apply
+        self.assertEqual(codes(54.7, 22.5), ["LT001", "LT049"])
+        self.assertEqual(codes(55.5, 21.5), ["LT001"])
+
+        # known goes by the file's country, not the code's prefix
+        dublin = resolve_geocodes(53.35, -6.26, text, "v")
+        self.assertEqual(dublin["codes"], ["EI04"])
+        self.assertEqual(dublin["known"], ["EI04", "IE001"])
+
     @requests_mock.mock()
     def test_geocode_match(self, m):
         """uk_sample.xml is an older UK feed, with EMMA_IDs and no polygons"""
@@ -349,6 +360,17 @@ class TestMeteoalert(unittest.TestCase):
         meteo = Meteoalert("United-Kingdom", geocodes={"codes": ["UK108"], "known": UK_CODES[:-1]})
         self.assertEqual(len(meteo.get_alerts()), 2)
         self.assertTrue(meteo.geocodes_outdated)
+
+    @requests_mock.mock()
+    def test_geocodes_ignore_other_codes(self, m):
+        """france_sample.xml has only NUTS3 codes, as Romania's and North
+        Macedonia's feeds do: geocodes can't match them, nor are they outdated"""
+        m.get("/feeds/meteoalarm-legacy-atom-france", text=read("france_sample.xml"))
+        m.get(re.compile("/api/v1/warnings/feeds-france/"), text=read("france_sample_detail.xml"))
+
+        meteo = Meteoalert("France", geocodes={"codes": ["FR718"], "known": ["FR718"]})
+        self.assertEqual(meteo.get_alerts(), [])
+        self.assertFalse(meteo.geocodes_outdated)
 
     @requests_mock.mock()
     def test_update_geocodes(self, m):

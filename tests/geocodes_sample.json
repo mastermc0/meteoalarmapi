@@ -1,5 +1,9 @@
 {"crs": {"properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}, "type": "name"}, "features": [
 {"geometry": {"coordinates": [[[-8.0, 54.0], [-5.5, 54.0], [-5.5, 55.5], [-8.0, 55.5], [-8.0, 54.0]]], "type": "Polygon"}, "properties": {"code": "UK108", "country": "UK", "name": "Northern Ireland", "type": "EMMA_ID"}, "type": "Feature"},
 {"geometry": {"coordinates": [[[[-5.5, 51.3], [-2.7, 51.3], [-2.7, 53.0], [-5.5, 53.0], [-5.5, 51.3]], [[-4.5, 52.0], [-3.5, 52.0], [-3.5, 52.5], [-4.5, 52.5], [-4.5, 52.0]]], [[[-4.7, 53.1], [-4.0, 53.1], [-4.0, 53.45], [-4.7, 53.45], [-4.7, 53.1]]]], "type": "MultiPolygon"}, "properties": {"code": "UK117", "country": "UK", "name": "Wales", "type": "EMMA_ID"}, "type": "Feature"},
-{"geometry": {"coordinates": [[[5.8, 45.6], [7.1, 45.6], [7.1, 46.5], [5.8, 46.5], [5.8, 45.6]]], "type": "Polygon"}, "properties": {"code": "FR718", "country": "FR", "name": "Haute Savoie", "type": "EMMA_ID"}, "type": "Feature"}
+{"geometry": {"coordinates": [[[5.8, 45.6], [7.1, 45.6], [7.1, 46.5], [5.8, 46.5], [5.8, 45.6]]], "type": "Polygon"}, "properties": {"code": "FR718", "country": "FR", "name": "Haute Savoie", "type": "EMMA_ID"}, "type": "Feature"},
+{"geometry": {"coordinates": [[[21.0, 54.0], [24.0, 54.0], [24.0, 56.0], [21.0, 56.0], [21.0, 54.0]]], "type": "Polygon"}, "properties": {"code": "LT001", "country": "LT", "name": "Vilniaus apskritis", "type": "EMMA_ID"}, "type": "Feature"},
+{"geometry": {"coordinates": [[[22.0, 54.5], [23.0, 54.5], [23.0, 55.0], [22.0, 55.0], [22.0, 54.5]]], "type": "Polygon"}, "properties": {"code": "LT049", "country": "LT", "name": "Vilniaus miesto savivaldybe", "type": "EMMA_ID"}, "type": "Feature"},
+{"geometry": {"coordinates": [[[-6.5, 53.0], [-6.0, 53.0], [-6.0, 53.5], [-6.5, 53.5], [-6.5, 53.0]]], "type": "Polygon"}, "properties": {"code": "EI04", "country": "IE", "name": "Dublin", "type": "EMMA_ID"}, "type": "Feature"},
+{"geometry": {"coordinates": [[[-10.0, 51.5], [-9.0, 51.5], [-9.0, 52.0], [-10.0, 52.0], [-10.0, 51.5]]], "type": "Polygon"}, "properties": {"code": "IE001", "country": "IE", "name": "Kerry", "type": "EMMA_ID"}, "type": "Feature"}
 ], "type": "FeatureCollection"}
