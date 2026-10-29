@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## meteoalarmapi 0.5.0 - unreleased
+- Added `latitude`/`longitude` to match alerts whose area polygon contains a point, for feeds without provinces such as Norway (meteoalert-api#35). `province` is now optional.
+
 ## meteoalarmapi 0.4.0 - unreleased
 First release of the maintained fork, published as `meteoalarmapi`.
 

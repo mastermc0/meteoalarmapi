@@ -7,6 +7,7 @@ from unittest import mock
 import requests_mock
 
 from meteoalarmapi import Meteoalert, ServerError, UnexpectedError, WrongCountry
+from meteoalarmapi.meteoalert import parse_polygon, point_in_polygon
 
 # uk_multiple_sample.xml (Highlands & Eilean Siar, 24 Oct 2026) lists, in feed order:
 MULTIPLE = (
@@ -14,9 +15,9 @@ MULTIPLE = (
     ("ebbdecd5-fa00-40ec-9fa2-a4a5ea13b424", "amber_wind"),
     ("b0e83ff1-0a4b-4f2e-947a-c20b1432417c", "yellow_wind"),
 )
-# norway_sample.xml (26 Oct 2026): high water in Rogaland and Hordaland, and
-# a flood with two entries (two areas). Detail files are named by the CAP
-# document's id prefix.
+# norway_sample.xml (26 Oct 2026) has no provinces, only area polygons: high
+# water in Rogaland and Hordaland, and a flood with two entries (two areas).
+# Detail files are named by the CAP document's id prefix.
 NORWAY = ("ef68e1fd", "7be0d389", "15082db6")
 
 
@@ -214,6 +215,27 @@ class TestMeteoalert(unittest.TestCase):
         self.assertEqual(len({a["identifier"] for a in alerts.values()}), 3)
 
     @requests_mock.mock()
+    def test_point_match(self, m):
+        self._register_norway(m)
+
+        def events(lat, lon, province=None):
+            # area names, from headlines like "High water level, yellow level, <area>, ..."
+            alerts = Meteoalert("Norway", province, latitude=lat, longitude=lon).get_alerts()
+            return sorted(a["headline"].split(",")[2].strip() if "," in a["headline"]
+                          else a["event"] for a in alerts)
+
+        # Stavanger and Bergen are each in one coastal high water area
+        self.assertEqual(events(58.970, 5.733), ["Coast and fjords in Rogaland"])
+        self.assertEqual(events(60.392, 5.324), ["Coast and fjords in Hordaland"])
+        # Kongsberg is in the flood area
+        self.assertEqual(events(59.668, 9.650), ["Flood"])
+        # Trondheim is in none of them
+        self.assertEqual(events(63.430, 10.395), [])
+        # with a province too, alerts matching either are included
+        self.assertEqual(events(60.392, 5.324, "Rogaland"),
+                         ["Coast and fjords in Hordaland", "Coast and fjords in Rogaland"])
+
+    @requests_mock.mock()
     def test_alert_fetched_once(self, m):
         """The flood has two feed entries (one per area) sharing a CAP document"""
         self._register_norway(m)
@@ -222,6 +244,23 @@ class TestMeteoalert(unittest.TestCase):
         self.assertEqual([a["event"] for a in alerts], ["Flood"])
         cap_requests = [r for r in m.request_history if "15082db6" in r.url]
         self.assertEqual(len(cap_requests), 1)
+
+    def test_location_required(self):
+        self.assertRaises(ValueError, Meteoalert, "Norway")
+        self.assertRaises(ValueError, Meteoalert, "Norway", latitude=59.9)
+        self.assertRaises(ValueError, Meteoalert, "Norway", "Oslo", longitude=10.7)
+
+    def test_point_in_polygon(self):
+        square = parse_polygon("0,0 0,10 10,10 10,0 0,0")
+        self.assertTrue(point_in_polygon((5, 5), square))
+        self.assertFalse(point_in_polygon((15, 5), square))
+        self.assertFalse(point_in_polygon((5, -1), square))
+        # an L shape: the notch at (7, 7) is outside
+        ell = parse_polygon("0,0 0,10 5,10 5,5 10,5 10,0")
+        self.assertTrue(point_in_polygon((2, 8), ell))
+        self.assertFalse(point_in_polygon((7, 7), ell))
+        self.assertFalse(point_in_polygon((1, 1), parse_polygon("0,0 1,1")))
+        self.assertEqual(parse_polygon("1,2 bad 3,4"), [(1.0, 2.0), (3.0, 4.0)])
 
     @staticmethod
     def _register_norway(m):

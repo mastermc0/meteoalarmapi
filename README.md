@@ -29,6 +29,15 @@ for alert in meteo.get_alerts():
     print(alert['event'], alert['severity'], alert['onset'], alert['expires'])
 ```
 
+Some countries, such as Norway, don't name provinces in their feed and only give each alert's area as a polygon. For those, give a latitude and longitude instead. You get the alerts whose area contains that point:
+
+```python
+meteo = Meteoalert('norway', latitude=60.392, longitude=5.324)  # Bergen
+print(meteo.get_alerts())
+```
+
+This works for any feed that includes polygons, including the UK's. With both a province and a point, you get alerts matching either.
+
 Each alert also has the CAP message fields `identifier`, `message_type` (`Alert`, `Update` or `Cancel`), `references` and `sent`, so you can follow a warning across updates and tell when one is cancelled.
 
 Some feeds keep warnings for a while after they end. Pass `include_expired=False` to leave expired alerts out. Future alerts, which haven't started yet, are kept:
@@ -46,6 +55,7 @@ Alerts are ranked with current ones first, then by awareness level (`awareness_l
 - `get_alert()` returns the most severe current alert. Before, it returned the first match in the feed, so a yellow warning could hide an amber one.
 - New `get_alerts()` returns every matching alert, most severe first.
 - `get_alerts(include_expired=False)` leaves out expired alerts, which some feeds keep for a while. Future alerts are kept.
+- Alerts can be matched by a latitude and longitude inside the alert's area, for feeds without provinces (meteoalert-api#35) (0.5.0).
 - `awareness_level`, `awareness_type` and the other CAP parameters are now included for feeds with a single language, such as the UK's. Before, they were silently dropped.
 - An alert listed several times in the feed (once per language or area) is returned and fetched only once.
 - Each alert includes the CAP `identifier`, `message_type`, `references` and `sent`.
