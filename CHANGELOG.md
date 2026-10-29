@@ -10,6 +10,7 @@ First release of the maintained fork, published as `meteoalarmapi`.
 - Renamed the package to `meteoalarmapi` (`from meteoalarmapi import Meteoalert`)
 - `get_alert()` returns the most severe current alert instead of the first match in the feed
 - Added `get_alerts()`, which returns every matching alert, most severe first
+- `get_alerts(include_expired=False)` leaves out expired alerts, which some feeds keep for a while; future alerts are kept
 - Fixed CAP parameters (awareness_level, awareness_type, ...) being dropped for single-language feeds
 - Alerts include the CAP message fields `identifier`, `message_type`, `references` and `sent`
 - Alerts with several feed entries (per language or area) are fetched and returned once

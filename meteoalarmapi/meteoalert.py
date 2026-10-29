@@ -50,11 +50,14 @@ class Meteoalert:
         alerts = self.get_alerts()
         return alerts[0] if alerts else {}
 
-    def get_alerts(self):
+    def get_alerts(self, include_expired=True):
         """Every alert for the province, most severe first.
 
         Unexpired alerts come first, then the highest awareness level (or CAP
         severity when there is none). Equally ranked alerts keep feed order.
+
+        With include_expired=False, expired alerts are left out. Future
+        alerts (not started yet) are kept, so upcoming warnings still show.
         """
         feed = xmltodict.parse(self._fetch(self.endpoint.format(self.country)))
         entries = (feed.get("feed") or {}).get("entry", [])
@@ -80,6 +83,10 @@ class Meteoalert:
                 # document is gone, not a sign of a wrong country, so skip it.
                 if text is not None:
                     alerts.append(self._parse_cap(text))
+
+        if not include_expired:
+            # Some feeds keep warnings for a while after they end
+            alerts = [a for a in alerts if not self.is_expired(a.get("expires"))]
 
         # sorted() is stable, so equally ranked alerts keep feed order
         return sorted(alerts, key=self.alert_rank, reverse=True)

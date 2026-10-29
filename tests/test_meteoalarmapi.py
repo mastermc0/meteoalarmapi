@@ -114,6 +114,26 @@ class TestMeteoalert(unittest.TestCase):
         self.assertEqual(events, ["Amber wind warning", "Yellow wind warning", "Yellow rain warning"])
 
     @requests_mock.mock()
+    def test_get_alerts_without_expired(self, m):
+        self._register_multiple(m)
+        meteo = Meteoalert("United-Kingdom", "Highlands & Eilean Siar")
+
+        with clock("2026-10-24T12:00:00"):
+            events = [a["event"] for a in meteo.get_alerts(include_expired=False)]
+        # future alerts are kept: rain and amber wind only start at 20:00
+        self.assertEqual(events, ["Amber wind warning", "Yellow rain warning", "Yellow wind warning"])
+
+        with clock("2026-10-25T16:00:00"):
+            events = [a["event"] for a in meteo.get_alerts(include_expired=False)]
+        # yellow rain expired at 15:00
+        self.assertEqual(events, ["Amber wind warning", "Yellow wind warning"])
+
+        with clock("2026-10-26T12:00:00"):
+            self.assertEqual(meteo.get_alerts(include_expired=False), [])
+            # by default expired alerts are still returned
+            self.assertEqual(len(meteo.get_alerts()), 3)
+
+    @requests_mock.mock()
     def test_single_language_parameters(self, m):
         """UK CAP documents have one <info>; its parameters used to be dropped"""
         self._register_multiple(m)
