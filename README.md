@@ -41,7 +41,7 @@ This works for any feed that includes polygons, including the UK's. With both a 
 Most other feeds, such as Spain's and Germany's, give each area only as an EMMA_ID code. To match those by point too, look up the point's EMMA_ID area once with `update_geocodes()`, store what it returns, and pass it in:
 
 ```python
-from meteoalarmapi.meteoalert import update_geocodes
+from meteoalarmapi import update_geocodes
 
 geocodes = update_geocodes(37.626, -0.997)  # Cartagena: downloads MeteoAlarm's area outlines once
 meteo = Meteoalert('spain', latitude=37.626, longitude=-0.997, geocodes=geocodes)
