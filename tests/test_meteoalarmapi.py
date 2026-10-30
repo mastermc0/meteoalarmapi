@@ -7,7 +7,15 @@ from unittest import mock
 import requests_mock
 
 from meteoalarmapi import Meteoalert, ServerError, UnexpectedError, WrongCountry
-from meteoalarmapi.meteoalert import parse_polygon, point_in_polygon
+from meteoalarmapi.meteoalert import (
+    GEOCODES_FALLBACK,
+    GEOCODES_LISTING,
+    parse_polygon,
+    point_in_geometry,
+    point_in_polygon,
+    resolve_geocodes,
+    update_geocodes,
+)
 
 # uk_multiple_sample.xml (Highlands & Eilean Siar, 24 Oct 2026) lists, in feed order:
 MULTIPLE = (
@@ -19,6 +27,19 @@ MULTIPLE = (
 # water in Rogaland and Hordaland, and a flood with two entries (two areas).
 # Detail files are named by the CAP document's id prefix.
 NORWAY = ("ef68e1fd", "7be0d389", "15082db6")
+# geocodes_sample.json is a made-up excerpt of MeteoAlarm's geocodes file in
+# the same format: boxes for Northern Ireland (UK108), Wales (UK117, with a
+# hole and Anglesey as a second polygon), Haute Savoie (FR718), a Lithuanian
+# county with a municipality inside it (LT001, LT049), as the real file has,
+# and two Irish areas whose codes don't all start with the country (EI04, IE001).
+BELFAST = (54.597, -5.930)
+UK_CODES = ["UK101", "UK102", "UK103", "UK104", "UK105", "UK107", "UK108", "UK109",
+            "UK110", "UK111", "UK112", "UK113", "UK114", "UK115", "UK117"]
+GEOCODES_FILES = "https://gitlab.com/meteoalarm-pm-group/documents/-/raw/"
+LISTING = [{"path": "MeteoAlarm_CAP_Profile_v2.0.pdf"},
+           {"path": "MeteoAlarm_Geocodes_2026_02_20.json"},
+           {"path": "MeteoAlarm_Geocodes_2026_07_31.json"},
+           {"path": "README.md"}]
 
 
 def utc(text):
@@ -261,6 +282,168 @@ class TestMeteoalert(unittest.TestCase):
         self.assertFalse(point_in_polygon((7, 7), ell))
         self.assertFalse(point_in_polygon((1, 1), parse_polygon("0,0 1,1")))
         self.assertEqual(parse_polygon("1,2 bad 3,4"), [(1.0, 2.0), (3.0, 4.0)])
+
+    def test_point_in_geometry(self):
+        # GeoJSON is [lon, lat]
+        square = {"type": "Polygon", "coordinates": [[[0, 0], [20, 0], [20, 10], [0, 10], [0, 0]]]}
+        self.assertTrue(point_in_geometry((5, 15), square))
+        self.assertFalse(point_in_geometry((15, 5), square))
+        with_hole = {"type": "Polygon", "coordinates": [
+            [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+            [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]]]}
+        self.assertTrue(point_in_geometry((2, 2), with_hole))
+        self.assertFalse(point_in_geometry((5, 5), with_hole))
+        two = {"type": "MultiPolygon", "coordinates": [
+            [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+            [[[5, 5], [6, 5], [6, 6], [5, 6], [5, 5]]]]}
+        self.assertTrue(point_in_geometry((5.5, 5.5), two))
+        self.assertFalse(point_in_geometry((3, 3), two))
+        self.assertFalse(point_in_geometry((0.5, 0.5), {"type": "Point", "coordinates": [0.5, 0.5]}))
+
+    def test_resolve_geocodes(self):
+        text = read("geocodes_sample.json")
+        with clock("2026-10-29T12:00:00"):
+            geocodes = resolve_geocodes(*BELFAST, text, "MeteoAlarm_Geocodes_2026_07_31.json")
+        self.assertEqual(geocodes, {
+            "codes": ["UK108"],
+            # every code of the point's country, but not France's
+            "known": ["UK108", "UK117"],
+            "latitude": BELFAST[0],
+            "longitude": BELFAST[1],
+            "version": "MeteoAlarm_Geocodes_2026_07_31.json",
+            "checked": "2026-10-29T12:00:00+00:00",
+        })
+
+        def codes(lat, lon):
+            return resolve_geocodes(lat, lon, text, "v")["codes"]
+        self.assertEqual(codes(51.48, -3.18), ["UK117"])  # Cardiff
+        self.assertEqual(codes(52.25, -4.0), [])  # in Wales's hole
+        self.assertEqual(codes(53.3, -4.4), ["UK117"])  # Anglesey
+        # a point in no area, such as at sea, knows no codes either
+        self.assertEqual(resolve_geocodes(47.0, -5.0, text, "v")["known"], [])
+
+        # Lithuania has municipalities inside counties: warnings for either apply
+        self.assertEqual(codes(54.7, 22.5), ["LT001", "LT049"])
+        self.assertEqual(codes(55.5, 21.5), ["LT001"])
+
+        # known goes by the file's country, not the code's prefix
+        dublin = resolve_geocodes(53.35, -6.26, text, "v")
+        self.assertEqual(dublin["codes"], ["EI04"])
+        self.assertEqual(dublin["known"], ["EI04", "IE001"])
+
+    @requests_mock.mock()
+    def test_geocode_match(self, m):
+        """uk_sample.xml is an older UK feed, with EMMA_IDs and no polygons"""
+        m.get("/feeds/meteoalarm-legacy-atom-united-kingdom", text=read("uk_sample.xml"))
+        m.get(re.compile("/api/v1/warnings/feeds-united-kingdom/"),
+              text=read("uk_nothern_ireland_sample_detail.xml"))
+
+        # without geocodes a point matches nothing here
+        meteo = Meteoalert("United-Kingdom", latitude=BELFAST[0], longitude=BELFAST[1])
+        self.assertEqual(meteo.get_alerts(), [])
+        self.assertFalse(meteo.geocodes_outdated)
+
+        geocodes = {"codes": ["UK108"], "known": UK_CODES}
+        m.reset_mock()
+        meteo = Meteoalert("United-Kingdom", latitude=BELFAST[0], longitude=BELFAST[1],
+                           geocodes=geocodes)
+        self.assertEqual(len(meteo.get_alerts()), 2)
+        # the two CAP documents with a Northern Ireland entry
+        fetched = sorted(r.url.rsplit("/", 1)[-1][:8] for r in m.request_history
+                         if "/api/v1/warnings/" in r.url)
+        self.assertEqual(fetched, ["a4647d38", "bca9d20a"])
+        self.assertFalse(meteo.geocodes_outdated)
+        # geocodes alone are enough
+        self.assertEqual(len(Meteoalert("United-Kingdom", geocodes=geocodes).get_alerts()), 2)
+
+        # a code in the feed but not in geocodes
+        meteo = Meteoalert("United-Kingdom", geocodes={"codes": ["UK108"], "known": UK_CODES[:-1]})
+        self.assertEqual(len(meteo.get_alerts()), 2)
+        self.assertTrue(meteo.geocodes_outdated)
+
+    @requests_mock.mock()
+    def test_geocodes_ignore_other_codes(self, m):
+        """france_sample.xml has only NUTS3 codes, as Romania's and North
+        Macedonia's feeds do: geocodes can't match them, nor are they outdated"""
+        m.get("/feeds/meteoalarm-legacy-atom-france", text=read("france_sample.xml"))
+        m.get(re.compile("/api/v1/warnings/feeds-france/"), text=read("france_sample_detail.xml"))
+
+        meteo = Meteoalert("France", geocodes={"codes": ["FR718"], "known": ["FR718"]})
+        self.assertEqual(meteo.get_alerts(), [])
+        self.assertFalse(meteo.geocodes_outdated)
+
+    @requests_mock.mock()
+    def test_update_geocodes(self, m):
+        m.get(GEOCODES_LISTING, json=LISTING)
+        newest = m.get(GEOCODES_FILES + "master/MeteoAlarm_Geocodes_2026_07_31.json",
+                       text=read("geocodes_sample.json"))
+
+        # the first call downloads the newest file
+        with clock("2026-10-29T12:00:00"):
+            geocodes = update_geocodes(*BELFAST)
+        self.assertEqual(geocodes["codes"], ["UK108"])
+        self.assertEqual(geocodes["version"], "MeteoAlarm_Geocodes_2026_07_31.json")
+        self.assertEqual(newest.call_count, 1)
+
+        # within a month nothing is fetched, unless outdated and a day has passed
+        m.reset_mock()
+        with clock("2026-11-20T12:00:00"):
+            self.assertIs(update_geocodes(*BELFAST, geocodes), geocodes)
+        with clock("2026-10-29T18:00:00"):
+            self.assertIs(update_geocodes(*BELFAST, geocodes, outdated=True), geocodes)
+        self.assertFalse(m.called)
+
+        # after that only the listing is read while the version is the same
+        with clock("2026-10-31T12:00:00"):
+            checked = update_geocodes(*BELFAST, geocodes, outdated=True)
+        self.assertEqual(checked["checked"], "2026-10-31T12:00:00+00:00")
+        self.assertEqual(checked["codes"], ["UK108"])
+        self.assertEqual(m.call_count, 1)
+        with clock("2026-12-01T12:00:00"):
+            update_geocodes(*BELFAST, geocodes)
+        self.assertEqual(newest.call_count, 0)
+
+        # a new version is downloaded
+        m.get(GEOCODES_LISTING, json=LISTING + [{"path": "MeteoAlarm_Geocodes_2026_11_30.json"}])
+        newer = m.get(GEOCODES_FILES + "master/MeteoAlarm_Geocodes_2026_11_30.json",
+                      text=read("geocodes_sample.json"))
+        with clock("2026-12-01T12:00:00"):
+            self.assertEqual(update_geocodes(*BELFAST, geocodes)["version"],
+                             "MeteoAlarm_Geocodes_2026_11_30.json")
+        self.assertEqual(newer.call_count, 1)
+
+        # so is one for a different point, whatever its age
+        with clock("2026-10-29T12:05:00"):
+            moved = update_geocodes(51.48, -3.18, geocodes)
+        self.assertEqual(moved["codes"], ["UK117"])
+
+    @requests_mock.mock()
+    def test_update_geocodes_without_listing(self, m):
+        m.get(GEOCODES_LISTING, status_code=503)
+        ref, name = GEOCODES_FALLBACK
+        pinned = m.get(f"{GEOCODES_FILES}{ref}/{name}", text=read("geocodes_sample.json"))
+
+        # a first setup falls back to the pinned version
+        geocodes = update_geocodes(*BELFAST)
+        self.assertEqual(geocodes["codes"], ["UK108"])
+        self.assertEqual(pinned.call_count, 1)
+
+        # a later check raises, so the caller keeps what it has
+        with clock("2027-01-01T12:00:00"):
+            self.assertRaises(ServerError, update_geocodes, *BELFAST, geocodes)
+
+        m.get(GEOCODES_LISTING, json=[{"path": "README.md"}])
+        with clock("2027-01-01T12:00:00"):
+            self.assertRaises(UnexpectedError, update_geocodes, *BELFAST, geocodes)
+
+    @requests_mock.mock()
+    def test_update_geocodes_bad_file(self, m):
+        m.get(GEOCODES_LISTING, json=LISTING)
+        m.get(GEOCODES_FILES + "master/MeteoAlarm_Geocodes_2026_07_31.json", text="<html>")
+        self.assertRaises(UnexpectedError, update_geocodes, *BELFAST)
+        m.get(GEOCODES_FILES + "master/MeteoAlarm_Geocodes_2026_07_31.json",
+              text='{"features": [{"type": "Feature", ')
+        self.assertRaises(UnexpectedError, update_geocodes, *BELFAST)
 
     @staticmethod
     def _register_norway(m):

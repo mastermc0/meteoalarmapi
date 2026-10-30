@@ -3,6 +3,13 @@ from .meteoalert import (
     ServerError,
     UnexpectedError,
     WrongCountry,
+    update_geocodes,
 )
 
-__all__ = ["Meteoalert", "ServerError", "UnexpectedError", "WrongCountry"]
+__all__ = [
+    "Meteoalert",
+    "ServerError",
+    "UnexpectedError",
+    "WrongCountry",
+    "update_geocodes",
+]

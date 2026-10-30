@@ -38,6 +38,21 @@ print(meteo.get_alerts())
 
 This works for any feed that includes polygons, including the UK's. With both a province and a point, you get alerts matching either.
 
+Most other feeds, such as Spain's and Germany's, give each area only as an EMMA_ID code. To match those by point too, look up the point's EMMA_ID area once with `update_geocodes()`, store what it returns, and pass it in:
+
+```python
+from meteoalarmapi import update_geocodes
+
+geocodes = update_geocodes(37.626, -0.997)  # Cartagena: downloads MeteoAlarm's area outlines once
+meteo = Meteoalert('spain', latitude=37.626, longitude=-0.997, geocodes=geocodes)
+print(meteo.get_alerts())
+
+# later, e.g. once a day: only checks for a newer file, and downloads it if there is one
+geocodes = update_geocodes(37.626, -0.997, geocodes, outdated=meteo.geocodes_outdated)
+```
+
+The area outlines are MeteoAlarm's geocodes file (33 MB), which `update_geocodes()` downloads from [MeteoAlarm's Redistribution Hub](https://meteoalarm.org/en/live/page/redistribution-hub) and doesn't keep. What it returns is small and JSON-safe: the point's codes, the other codes in its country, and the file version. Later calls read MeteoAlarm's file listing (a few KB) once a month, or once a day when `geocodes_outdated` says the feed had a code it didn't know, and download again only when there's a newer file. `get_alerts()` itself never downloads it.
+
 Each alert also has the CAP message fields `identifier`, `message_type` (`Alert`, `Update` or `Cancel`), `references` and `sent`, so you can follow a warning across updates and tell when one is cancelled.
 
 Some feeds keep warnings for a while after they end. Pass `include_expired=False` to leave expired alerts out. Future alerts, which haven't started yet, are kept:
@@ -56,6 +71,7 @@ Alerts are ranked with current ones first, then by awareness level (`awareness_l
 - New `get_alerts()` returns every matching alert, most severe first.
 - `get_alerts(include_expired=False)` leaves out expired alerts, which some feeds keep for a while. Future alerts are kept.
 - Alerts can be matched by a latitude and longitude inside the alert's area, for feeds without provinces (meteoalert-api#35) (0.5.0).
+- Points also match areas given only as EMMA_ID codes, using MeteoAlarm's geocodes file downloaded once by `update_geocodes()` (0.5.0).
 - `awareness_level`, `awareness_type` and the other CAP parameters are now included for feeds with a single language, such as the UK's. Before, they were silently dropped.
 - An alert listed several times in the feed (once per language or area) is returned and fetched only once.
 - Each alert includes the CAP `identifier`, `message_type`, `references` and `sent`.
