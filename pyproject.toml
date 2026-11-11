@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "meteoalarmapi"
-version = "0.4.0"
+version = "0.5.0"
 description = "Weather alerts for European regions from MeteoAlarm.org. A maintained fork of meteoalertapi."
 readme = "README.md"
 license = "MIT"
