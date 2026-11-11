@@ -3,8 +3,9 @@
 A Python wrapper for MeteoAlarm's legacy Atom feeds (`feeds.meteoalarm.org`) and the CAP documents they link to. A maintained fork of [meteoalertapi](https://github.com/rolfberkenbosch/meteoalert-api), meant for Home Assistant's `meteoalarm` integration. Maintainers: @mastermc0 and @jjprz.
 
 ## Layout
-- `meteoalarmapi/meteoalert.py`: the whole library. `Meteoalert(country, province=None, language="en-GB", latitude=None, longitude=None)` (the location arguments are 0.5.0), with `get_alert()` (most severe, or `{}`) and `get_alerts()` (all, ranked).
-- `tests/`: pytest with `requests_mock`. Fixtures are real feeds saved as XML (`uk_multiple_*`, `norway_sample*`). Patch `_utcnow` to fix the clock; never depend on today's date.
+- `meteoalarmapi/meteoalert.py`: the library and the sync client. `Meteoalert(country, province=None, language="en-GB", latitude=None, longitude=None)` (the location arguments are 0.5.0), with `get_alert()` (most severe, or `{}`) and `get_alerts()` (all, ranked). Matching, CAP parsing and ranking live in `_MeteoalertBase`, which does no I/O.
+- `meteoalarmapi/aio.py`: the asyncio client (0.6.0). `AsyncMeteoalert(..., session=...)` with `async_get_alert()`/`async_get_alerts()`, and `async_update_geocodes(session, ...)`, on aiohttp. It reuses `_MeteoalertBase` and the pure geocodes helpers, so only the HTTP layer differs. `meteoalarmapi/__init__.py` imports it lazily, so the sync API works without aiohttp.
+- `tests/`: pytest with `requests_mock` (sync) and `aioresponses` (async, `test_async.py`, with a small aiohttp 3.14 shim to drop once aioresponses releases pnuckowski/aioresponses#288 and #292). Fixtures are real feeds saved as XML (`uk_multiple_*`, `norway_sample*`). Patch `_utcnow` to fix the clock; never depend on today's date.
 
 ## Checks
 ```bash
@@ -18,11 +19,11 @@ CI runs both on Python 3.10–3.14 (`.github/workflows/tests.yml`).
 
 ## Rules for changes
 - `main` is protected: every change goes through a pull request, and all five `test (3.x)` jobs must pass. Don't push to `main` or force-push it.
-- Keep the public API compatible: `Meteoalert`, `get_alert()`, `get_alerts()`, the alert keys, and the exceptions `WrongCountry`, `ServerError` and `UnexpectedError`. Home Assistant depends on them.
+- Keep the public API compatible: `Meteoalert`, `get_alert()`, `get_alerts()`, the alert keys, and the exceptions `WrongCountry`, `ServerError` and `UnexpectedError`. Home Assistant depends on them. The same goes for `AsyncMeteoalert` once released, and a change to one client goes in the other too.
 - Semantic versioning in 0.x: new features bump the minor version, fixes the patch version. A breaking change needs a minor bump and a CHANGELOG entry saying so.
 - Add a CHANGELOG entry under the unreleased version for any user-visible change, and update the README's "What changed from meteoalertapi" list if relevant.
-- Every network call has a timeout (`TIMEOUT`). Errors raise the library's exceptions, never print.
-- Python 3.10+ and only `requests` and `xmltodict` as dependencies.
+- Every network call has a timeout (`TIMEOUT`; with aiohttp, as `sock_connect`/`sock_read`, not a total, so the 33 MB geocodes file isn't cut off). Errors raise the library's exceptions, never print.
+- Python 3.10+. Required dependencies are only `requests` and `xmltodict`; `aiohttp` is the optional `async` extra (`pip install "meteoalarmapi[async]"`) and is in the `test` extra.
 
 ## Releases
 - Publishing a GitHub release `vX.Y.Z` runs `.github/workflows/release.yml`: tests, build, then upload to PyPI by trusted publishing (environment `pypi`). No tokens are stored.

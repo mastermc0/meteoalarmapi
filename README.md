@@ -64,6 +64,31 @@ for alert in meteo.get_alerts(include_expired=False):
 
 Alerts are ranked with current ones first, then by awareness level (`awareness_level`, e.g. `3; Orange; Severe`), then by CAP severity. Alerts that rank equally keep their order in the feed.
 
+## asyncio
+
+`AsyncMeteoalert` is the same client for asyncio, on [aiohttp](https://docs.aiohttp.org/). Install it with the `async` extra:
+
+```console
+pip install "meteoalarmapi[async]"
+```
+
+It takes the same arguments as `Meteoalert`, plus an `aiohttp.ClientSession` that you own (it's never closed for you), and returns the same alerts, in the same order, with the same exceptions:
+
+```python
+import aiohttp
+from meteoalarmapi import AsyncMeteoalert, async_update_geocodes
+
+async with aiohttp.ClientSession() as session:
+    meteo = AsyncMeteoalert('norway', latitude=60.392, longitude=5.324, session=session)
+    alert = await meteo.async_get_alert()
+    alerts = await meteo.async_get_alerts(include_expired=False)
+
+    # update_geocodes(), with the session first
+    geocodes = await async_update_geocodes(session, 37.626, -0.997)
+```
+
+The alerts' CAP documents are fetched concurrently, and reading the geocodes file runs in the event loop's default executor so it doesn't block the loop. In Home Assistant, pass `async_get_clientsession(hass)` as the session. The sync `Meteoalert` stays, unchanged, and doesn't need aiohttp.
+
 ## What changed from meteoalertapi
 
 - The package is now imported as `meteoalarmapi` instead of `meteoalertapi`.
@@ -72,6 +97,7 @@ Alerts are ranked with current ones first, then by awareness level (`awareness_l
 - `get_alerts(include_expired=False)` leaves out expired alerts, which some feeds keep for a while. Future alerts are kept.
 - Alerts can be matched by a latitude and longitude inside the alert's area, for feeds without provinces (meteoalert-api#35) (0.5.0).
 - Points also match areas given only as EMMA_ID codes, using MeteoAlarm's geocodes file downloaded once by `update_geocodes()` (0.5.0).
+- An asyncio client, `AsyncMeteoalert`, on aiohttp with a session you pass in (`pip install "meteoalarmapi[async]"`) (0.6.0).
 - `awareness_level`, `awareness_type` and the other CAP parameters are now included for feeds with a single language, such as the UK's. Before, they were silently dropped.
 - An alert listed several times in the feed (once per language or area) is returned and fetched only once.
 - Each alert includes the CAP `identifier`, `message_type`, `references` and `sent`.

@@ -2,6 +2,9 @@
 
 Reads the country's legacy Atom feed, keeps the entries whose area matches
 the region (by name or EMMA_ID code) and fetches each one's CAP document.
+
+The matching, parsing and ranking do no I/O and are shared by the requests
+client here (Meteoalert) and the aiohttp one in aio.py (AsyncMeteoalert).
 """
 
 import json
@@ -98,30 +101,44 @@ GEOCODES_MAX_AGE = timedelta(days=30)
 GEOCODES_OUTDATED_MAX_AGE = timedelta(days=1)
 
 
+def _check_status(status_code):
+    """Raise ServerError/UnexpectedError unless status_code is 200"""
+    if status_code >= 500:
+        raise ServerError(f"Server error - status code: {status_code}")
+    if status_code != 200:
+        raise UnexpectedError(f"Server returned unexpected status code: {status_code}")
+
+
 def _get(url):
     """The response for url, raising ServerError/UnexpectedError unless it's a 200"""
     try:
         response = requests.get(url, timeout=TIMEOUT)
     except Exception as err:
         raise UnexpectedError(str(err)) from err
-    if response.status_code >= 500:
-        raise ServerError(f"Server error - status code: {response.status_code}")
-    if response.status_code != 200:
-        raise UnexpectedError(f"Server returned unexpected status code: {response.status_code}")
+    _check_status(response.status_code)
     return response
 
 
-def latest_geocodes_name():
-    """The name of MeteoAlarm's newest geocodes file"""
+def _newest_geocodes_name(listing):
+    """The newest geocodes file name in MeteoAlarm's decoded listing"""
     try:
-        names = [item["path"] for item in _get(GEOCODES_LISTING).json()
+        names = [item["path"] for item in listing
                  if GEOCODES_NAME.fullmatch(item.get("path") or "")]
-    except (ValueError, TypeError, AttributeError, KeyError) as err:
+    except (TypeError, AttributeError, KeyError) as err:
         raise UnexpectedError(f"Unexpected geocodes listing: {err}") from err
     if not names:
         raise UnexpectedError("MeteoAlarm's listing has no geocodes file")
     # The dates are zero-padded, so the newest name sorts last
     return max(names)
+
+
+def latest_geocodes_name():
+    """The name of MeteoAlarm's newest geocodes file"""
+    try:
+        listing = _get(GEOCODES_LISTING).json()
+    except ValueError as err:
+        raise UnexpectedError(f"Unexpected geocodes listing: {err}") from err
+    return _newest_geocodes_name(listing)
 
 
 def iter_geocodes(text):
@@ -182,18 +199,12 @@ def update_geocodes(latitude, longitude, geocodes=None, outdated=False):
 
     It can take a while and raises ServerError/UnexpectedError when MeteoAlarm
     can't be reached, so call it outside get_alerts() and keep the previous
-    dict on an error.
+    dict on an error. With asyncio, use async_update_geocodes() instead.
     """
     point = (float(latitude), float(longitude))
-    same_point = bool(geocodes) and (geocodes.get("latitude"), geocodes.get("longitude")) == point
-    if same_point:
-        max_age = GEOCODES_OUTDATED_MAX_AGE if outdated else GEOCODES_MAX_AGE
-        try:
-            checked = datetime.fromisoformat(geocodes["checked"])
-        except (KeyError, TypeError, ValueError):
-            checked = None
-        if checked is not None and _utcnow() - checked < max_age:
-            return geocodes
+    same_point = _is_same_point(point, geocodes)
+    if same_point and _is_fresh(geocodes, outdated):
+        return geocodes
 
     ref = "master"
     try:
@@ -205,12 +216,35 @@ def update_geocodes(latitude, longitude, geocodes=None, outdated=False):
         ref, version = GEOCODES_FALLBACK
 
     if same_point and geocodes.get("version") == version:
-        return {**geocodes, "checked": _utcnow().isoformat()}
+        return _rechecked(geocodes)
     text = _get(GEOCODES_FILE.format(ref=ref, name=version)).content.decode("utf-8")
     return resolve_geocodes(*point, text, version)
 
 
-class Meteoalert:
+# The steps of update_geocodes() that fetch nothing, shared with
+# async_update_geocodes()
+
+def _is_same_point(point, geocodes):
+    return bool(geocodes) and (geocodes.get("latitude"), geocodes.get("longitude")) == point
+
+
+def _is_fresh(geocodes, outdated):
+    """Whether geocodes were checked recently enough to skip the listing"""
+    max_age = GEOCODES_OUTDATED_MAX_AGE if outdated else GEOCODES_MAX_AGE
+    try:
+        checked = datetime.fromisoformat(geocodes["checked"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return _utcnow() - checked < max_age
+
+
+def _rechecked(geocodes):
+    return {**geocodes, "checked": _utcnow().isoformat()}
+
+
+class _MeteoalertBase:
+    """What Meteoalert and AsyncMeteoalert share: the location, matching feed
+    entries to it, parsing CAP documents and ranking alerts. No I/O."""
 
     endpoint = "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-{0}"
 
@@ -238,24 +272,13 @@ class Meteoalert:
         self.geocodes = geocodes
         self.geocodes_outdated = False
 
-    def get_alert(self):
-        """The most severe alert for the location, or {} when there is none.
+    def _feed_url(self):
+        return self.endpoint.format(self.country)
 
-        See get_alerts() for the order.
-        """
-        alerts = self.get_alerts()
-        return alerts[0] if alerts else {}
-
-    def get_alerts(self, include_expired=True):
-        """Every alert for the location, most severe first.
-
-        Unexpired alerts come first, then the highest awareness level (or CAP
-        severity when there is none). Equally ranked alerts keep feed order.
-
-        With include_expired=False, expired alerts are left out. Future
-        alerts (not started yet) are kept, so upcoming warnings still show.
-        """
-        feed = xmltodict.parse(self._fetch(self.endpoint.format(self.country)))
+    def _cap_urls(self, feed_text):
+        """The CAP document URLs of the feed entries matching the location, in
+        feed order. Also sets geocodes_outdated."""
+        feed = xmltodict.parse(feed_text)
         entries = (feed.get("feed") or {}).get("entry", [])
         if not isinstance(entries, list):
             entries = [entries]
@@ -264,10 +287,9 @@ class Meteoalert:
         known = set((self.geocodes or {}).get("known") or [])
         self.geocodes_outdated = False
 
-        alerts = []
         # The feed has an entry per language and area of an alert, all
-        # pointing at the same CAP document, so fetch each one once.
-        seen = set()
+        # pointing at the same CAP document, so list each one once.
+        urls = []
         for entry in entries:
             emma_ids = self.emma_ids(entry) if self.geocodes else set()
             # An area without a polygon can only be matched by its code, so
@@ -283,18 +305,19 @@ class Meteoalert:
                 links = [links]
             cap_url = next((link.get("@href") for link in links
                             if link.get("@type") == "application/cap+xml"), None)
-            if cap_url and cap_url not in seen:
-                seen.add(cap_url)
-                text = self._fetch(cap_url, missing_ok=True)
-                # A warning withdrawn between reading the feed and fetching its
-                # document is gone, not a sign of a wrong country, so skip it.
-                if text is not None:
-                    alerts.append(self._parse_cap(text))
+            if cap_url and cap_url not in urls:
+                urls.append(cap_url)
+        return urls
 
+    def _ranked(self, cap_texts, include_expired):
+        """The alerts in the CAP documents, most severe first. A document that
+        has gone (None) is skipped."""
+        # A warning withdrawn between reading the feed and fetching its
+        # document is gone, not a sign of a wrong country, so skip it.
+        alerts = [self._parse_cap(text) for text in cap_texts if text is not None]
         if not include_expired:
             # Some feeds keep warnings for a while after they end
             alerts = [a for a in alerts if not self.is_expired(a.get("expires"))]
-
         # sorted() is stable, so equally ranked alerts keep feed order
         return sorted(alerts, key=self.alert_rank, reverse=True)
 
@@ -372,16 +395,12 @@ class Meteoalert:
         return {geocode.get("value") for geocode in geocodes
                 if isinstance(geocode, dict) and geocode.get("valueName") == "EMMA_ID"}
 
-    def _fetch(self, url, missing_ok=False):
-        """The response text, or None for a 404/410 when missing_ok"""
-        try:
-            response = requests.get(url, timeout=TIMEOUT)
-        except Exception as err:
-            raise UnexpectedError(str(err)) from err
-        if missing_ok and response.status_code in (404, 410):
-            return None
-        self.check_status_code(response.status_code)
-        return response.content.decode("utf-8")
+    def _is_missing(self, status_code, missing_ok):
+        """True for a 404/410 when missing_ok; raises for any other non-200"""
+        if missing_ok and status_code in (404, 410):
+            return True
+        self.check_status_code(status_code)
+        return False
 
     def check_status_code(self, status_code):
         if status_code == 404:
@@ -391,7 +410,40 @@ class Meteoalert:
                 "name matches feeds.meteoalarm.org; if it does, MeteoAlarm may be "
                 "temporarily unavailable"
             )
-        elif status_code >= 500:
-            raise ServerError(f"Server error - status code: {status_code}")
-        elif status_code != 200:
-            raise UnexpectedError(f"Server returned unexpected status code: {status_code}")
+        _check_status(status_code)
+
+
+class Meteoalert(_MeteoalertBase):
+    """Alerts from MeteoAlarm, fetched with requests. With asyncio, use
+    AsyncMeteoalert instead."""
+
+    def get_alert(self):
+        """The most severe alert for the location, or {} when there is none.
+
+        See get_alerts() for the order.
+        """
+        alerts = self.get_alerts()
+        return alerts[0] if alerts else {}
+
+    def get_alerts(self, include_expired=True):
+        """Every alert for the location, most severe first.
+
+        Unexpired alerts come first, then the highest awareness level (or CAP
+        severity when there is none). Equally ranked alerts keep feed order.
+
+        With include_expired=False, expired alerts are left out. Future
+        alerts (not started yet) are kept, so upcoming warnings still show.
+        """
+        urls = self._cap_urls(self._fetch(self._feed_url()))
+        texts = [self._fetch(url, missing_ok=True) for url in urls]
+        return self._ranked(texts, include_expired)
+
+    def _fetch(self, url, missing_ok=False):
+        """The response text, or None for a 404/410 when missing_ok"""
+        try:
+            response = requests.get(url, timeout=TIMEOUT)
+        except Exception as err:
+            raise UnexpectedError(str(err)) from err
+        if self._is_missing(response.status_code, missing_ok):
+            return None
+        return response.content.decode("utf-8")

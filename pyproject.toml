@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "meteoalarmapi"
-version = "0.5.0"
+version = "0.6.0"
 description = "Weather alerts for European regions from MeteoAlarm.org. A maintained fork of meteoalertapi."
 readme = "README.md"
 license = "MIT"
@@ -19,7 +19,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest", "requests-mock"]
+async = ["aiohttp"]
+test = ["pytest", "requests-mock", "aiohttp", "aioresponses"]
 
 [project.urls]
 Source = "https://github.com/mastermc0/meteoalarmapi"
