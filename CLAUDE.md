@@ -5,7 +5,7 @@ A Python wrapper for MeteoAlarm's legacy Atom feeds (`feeds.meteoalarm.org`) and
 ## Layout
 - `meteoalarmapi/meteoalert.py`: the library and the sync client. `Meteoalert(country, province=None, language="en-GB", latitude=None, longitude=None)` (the location arguments are 0.5.0), with `get_alert()` (most severe, or `{}`) and `get_alerts()` (all, ranked). Matching, CAP parsing and ranking live in `_MeteoalertBase`, which does no I/O.
 - `meteoalarmapi/aio.py`: the asyncio client (0.6.0). `AsyncMeteoalert(..., session=...)` with `async_get_alert()`/`async_get_alerts()`, and `async_update_geocodes(session, ...)`, on aiohttp. It reuses `_MeteoalertBase` and the pure geocodes helpers, so only the HTTP layer differs. `meteoalarmapi/__init__.py` imports it lazily, so the sync API works without aiohttp.
-- `tests/`: pytest with `requests_mock` (sync) and a fake aiohttp session in `test_async.py` (aioresponses 0.7.9 doesn't work with aiohttp 3.14). Fixtures are real feeds saved as XML (`uk_multiple_*`, `norway_sample*`). Patch `_utcnow` to fix the clock; never depend on today's date.
+- `tests/`: pytest with `requests_mock` (sync) and `aioresponses` (async, `test_async.py`, with a small aiohttp 3.14 shim to drop once aioresponses releases pnuckowski/aioresponses#288 and #292). Fixtures are real feeds saved as XML (`uk_multiple_*`, `norway_sample*`). Patch `_utcnow` to fix the clock; never depend on today's date.
 
 ## Checks
 ```bash

@@ -20,7 +20,7 @@ classifiers = [
 
 [project.optional-dependencies]
 async = ["aiohttp"]
-test = ["pytest", "requests-mock", "aiohttp"]
+test = ["pytest", "requests-mock", "aiohttp", "aioresponses"]
 
 [project.urls]
 Source = "https://github.com/mastermc0/meteoalarmapi"
