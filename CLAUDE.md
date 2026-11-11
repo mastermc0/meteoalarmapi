@@ -14,6 +14,8 @@ pytest tests
 ```
 CI runs both on Python 3.10–3.14 (`.github/workflows/tests.yml`).
 
+`python scripts/sweep_geocodes.py` checks point matching against MeteoAlarm's live geocodes file and every country feed. It needs the network, so it isn't in CI: run it before a release and when MeteoAlarm publishes a new geocodes file.
+
 ## Rules for changes
 - `main` is protected: every change goes through a pull request, and all five `test (3.x)` jobs must pass. Don't push to `main` or force-push it.
 - Keep the public API compatible: `Meteoalert`, `get_alert()`, `get_alerts()`, the alert keys, and the exceptions `WrongCountry`, `ServerError` and `UnexpectedError`. Home Assistant depends on them.
