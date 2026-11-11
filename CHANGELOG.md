@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## meteoalarmapi 0.6.0 - unreleased
+## meteoalarmapi 0.6.0 - 2026-11-11
 - Added `AsyncMeteoalert` and `async_update_geocodes()`, an asyncio client on aiohttp that takes your `aiohttp.ClientSession` (for Home Assistant, its shared session). It returns the same alerts, ranking and exceptions as `Meteoalert` and fetches the CAP documents concurrently. aiohttp is an optional extra: `pip install "meteoalarmapi[async]"`. The sync `Meteoalert` and `update_geocodes()` are unchanged and don't need it.
 
 ## meteoalarmapi 0.5.0 - 2026-11-11
