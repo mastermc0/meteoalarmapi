@@ -32,4 +32,4 @@ CI runs both on Python 3.10–3.14 (`.github/workflows/tests.yml`).
 - Install from TestPyPI with `pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ meteoalarmapi`.
 
 ## Plan
-The roadmap is in the GitHub issues and the [project board](https://github.com/users/mastermc0/projects/1). Releases go in order: 0.4.0 (#1), then 0.5.0 (location matching, PR #16, which stays a draft until 0.4.0 is out). The Home Assistant work (#2, #5, #13–#15) builds on them.
+The roadmap is in the GitHub issues and the [project board](https://github.com/users/mastermc0/projects/1). 0.4.0 (#1), 0.5.0 (#3, location matching) and 0.6.0 (#24, async client) are released. Next is the Home Assistant work: the Bronze UI setup (#5), then switching the integration to the async client (#25), then #13–#15 and #6–#8.
