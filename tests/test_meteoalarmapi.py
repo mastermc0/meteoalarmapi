@@ -151,6 +151,32 @@ class TestMeteoalert(unittest.TestCase):
         self.assertEqual(areas("Savoie"), {"Savoie"})
         self.assertEqual(areas("Haute Savoie"), {"Haute Savoie"})
 
+    @requests_mock.mock()
+    def test_suggest_areas(self, m):
+        self._register_norway(m)
+        meteo = Meteoalert("Norway", "Rogaland")
+        # by default for the province, which matches nothing as part of a name
+        self.assertEqual(meteo.suggest_areas(), ["Coast and fjords in Rogaland"])
+        self.assertEqual(meteo.suggest_areas("COAST AND FJORDS"),
+                         ["Coast and fjords in Hordaland", "Coast and fjords in Rogaland"])
+        self.assertEqual(meteo.suggest_areas("Trøndelag"), [])
+        self.assertEqual(meteo.suggest_areas("  "), [])
+
+    @requests_mock.mock()
+    def test_suggested_areas_match(self, m):
+        """Each suggestion is a whole area, so it matches as the province, even
+        in the UK's lists with commas inside names"""
+        self._register_multiple(m)
+        feed = read("uk_multiple_sample.xml")
+        entries = xmltodict.parse(feed)["feed"]["entry"]
+        suggestions = Meteoalert("United-Kingdom", "x").suggest_areas("s")
+        self.assertIn("Tayside & Fife", suggestions)
+        self.assertIn("Highlands & Eilean Siar", suggestions)
+        self.assertEqual(len(suggestions), len({s.casefold() for s in suggestions}))
+        for area in suggestions:
+            meteo = Meteoalert("United-Kingdom", area)
+            self.assertTrue(any(meteo.is_location_match(e, area) for e in entries), area)
+
     def test_server_not_reachable(self):
         meteo = Meteoalert("poland", "krakow", "en-US")
         meteo.endpoint = "https://simulate-dns-problem-with-meteo.zzzzzz/{0}"

@@ -236,6 +236,14 @@ class TestAsyncMeteoalert(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([a["event"] for a in alerts], ["Flood"])
         self.assertEqual(cap_calls(self.m), ["15082db6"])
 
+    async def test_suggest_areas(self):
+        self.register_norway()
+        meteo = self.meteo("Norway", "Rogaland")
+        self.assertEqual(await meteo.async_suggest_areas(), ["Coast and fjords in Rogaland"])
+        self.register_norway()
+        self.assertEqual(await meteo.async_suggest_areas("coast and fjords"),
+                         ["Coast and fjords in Hordaland", "Coast and fjords in Rogaland"])
+
     async def test_geocode_match(self):
         self.respond(FEED + "united-kingdom", body=read("uk_sample.xml"))
         self.respond(re.compile(re.escape(WARNINGS + "united-kingdom/")),

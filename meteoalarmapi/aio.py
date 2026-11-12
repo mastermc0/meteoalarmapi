@@ -122,6 +122,10 @@ class AsyncMeteoalert(_MeteoalertBase):
                 raise result
         return self._ranked(results, include_expired)
 
+    async def async_suggest_areas(self, name=None):
+        """Area names in the feed that contain name. See Meteoalert.suggest_areas()."""
+        return self._suggested_areas(await self._async_fetch(self._feed_url()), name)
+
     async def _async_fetch(self, url, missing_ok=False):
         """The response text, or None for a 404/410 when missing_ok"""
         status, body = await _request(self.session, url)
