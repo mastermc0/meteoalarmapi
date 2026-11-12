@@ -369,9 +369,33 @@ class _MeteoalertBase:
             moment = moment.replace(tzinfo=timezone.utc)
         return moment <= _utcnow()
 
+    def _suggested_areas(self, feed_text, name):
+        """The area names in the feed that contain name, ignoring case, sorted.
+
+        Each is a whole area as is_location_match() splits areaDesc, so it
+        matches when used as the province."""
+        text = str(self.province if name is None else name).strip().casefold()
+        if not text:
+            return []
+        entries = (xmltodict.parse(feed_text).get("feed") or {}).get("entry") or []
+        if not isinstance(entries, list):
+            entries = [entries]
+        areas = {}
+        for entry in entries:
+            for area in re.split(r"[,;|()]", entry.get("cap:areaDesc") or ""):
+                area = area.strip()
+                if text in area.casefold():
+                    areas.setdefault(area.casefold(), area)
+        return sorted(areas.values(), key=str.casefold)
+
     def is_location_match(self, entry, province):
-        # Attempt to match the province first by regex on name
-        if re.search(rf"{province}", entry.get("cap:areaDesc") or "", re.IGNORECASE):
+        # Attempt to match the province first by name, as a whole area in the
+        # areaDesc list: "Savoie" doesn't match "Haute Savoie", nor "Ceuta"
+        # "Costa - Ceuta". Feeds separate areas with "," ";" or "|", and some
+        # add places in brackets: "Kraj Vysočina (Telč, Jihlava)".
+        name = re.escape(str(province).strip())
+        if name and re.search(rf"(?:^|[,;|()])\s*{name}\s*(?=[,;|()]|$)",
+                              entry.get("cap:areaDesc") or "", re.IGNORECASE):
             return True
 
         # then by areaCode
@@ -437,6 +461,14 @@ class Meteoalert(_MeteoalertBase):
         urls = self._cap_urls(self._fetch(self._feed_url()))
         texts = [self._fetch(url, missing_ok=True) for url in urls]
         return self._ranked(texts, include_expired)
+
+    def suggest_areas(self, name=None):
+        """Area names in the country's feed that contain name (by default the
+        province), ignoring case: for a name that matches nothing, the whole
+        names it may be part of, such as 'Coast and fjords in Rogaland' for
+        'Rogaland'. The feed only lists areas that have a warning, so an empty
+        list doesn't mean the name is wrong."""
+        return self._suggested_areas(self._fetch(self._feed_url()), name)
 
     def _fetch(self, url, missing_ok=False):
         """The response text, or None for a 404/410 when missing_ok"""

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## meteoalarmapi 0.7.0 - unreleased
+- **Breaking:** a province name now matches only a whole area in the feed entry's `areaDesc` (ignoring case and spaces), where areas are separated by `,`, `;`, `|` or brackets. Before, the name was a regular expression searched anywhere in `areaDesc`, so 'Porto' also matched 'Porto Santo', 'Ceuta' matched 'Costa - Ceuta' and 'Feldkirch' matched 'Feldkirchen' (meteoalert-api#31): 130 pairs of areas in MeteoAlarm's geocodes file were confused this way. If you used part of a name, such as 'Rogaland' for 'Coast and fjords in Rogaland', use the whole name or the area's EMMA_ID code. Both `Meteoalert` and `AsyncMeteoalert` change.
+- Province names with brackets, such as 'Graz (Stadt)' or 'Stadt Frankfurt (Oder)', now match. Before, the brackets were read as regular expression syntax, so 27 areas could never be matched by name.
+- Added `suggest_areas()` (`async_suggest_areas()` on `AsyncMeteoalert`): the area names in the country's feed that contain a name, by default the province, such as 'Coast and fjords in Rogaland' for 'Rogaland'. Each one matches when used as the province. Use it to help someone whose partial name no longer matches. The feed only lists areas that have a warning, so an empty list doesn't mean a name is wrong.
+
 ## meteoalarmapi 0.6.0 - 2026-11-11
 - Added `AsyncMeteoalert` and `async_update_geocodes()`, an asyncio client on aiohttp that takes your `aiohttp.ClientSession` (for Home Assistant, its shared session). It returns the same alerts, ranking and exceptions as `Meteoalert` and fetches the CAP documents concurrently. aiohttp is an optional extra: `pip install "meteoalarmapi[async]"`. The sync `Meteoalert` and `update_geocodes()` are unchanged and don't need it.
 
