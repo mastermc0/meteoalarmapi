@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from unittest import mock
 
 import requests_mock
+import xmltodict
 
 from meteoalarmapi import Meteoalert, ServerError, UnexpectedError, WrongCountry
 from meteoalarmapi.meteoalert import (
@@ -98,6 +99,57 @@ class TestMeteoalert(unittest.TestCase):
         # by area code
         self.assertGreater(len(Meteoalert("France", "FR822", "fr-FR").get_alert()), 0)
         self.assertEqual(Meteoalert("France", "FAKE").get_alert(), {})
+
+    def test_province_matches_whole_area(self):
+        """A province matches a whole area in areaDesc, not part of another
+        name (meteoalert-api#31), and names with brackets match themselves"""
+        def matches(province, area_desc):
+            entry = {"cap:areaDesc": area_desc}
+            return Meteoalert("Spain", province).is_location_match(entry, province)
+
+        uk = "Central, Tayside & Fife | Grampian | SW Scotland, Lothian Borders | Wales"
+        for province, area_desc in [
+            ("Savoie", "Savoie"),
+            ("haute savoie", "Haute Savoie"),
+            (" Ceuta ", "Ceuta"),
+            ("Grampian", uk),
+            ("SW Scotland, Lothian Borders", uk),
+            ("Central, Tayside & Fife", uk),
+            ("Kainuu", "Pohjois-Savo, Pohjois-Karjala, Kainuu"),
+            ("Kraj Vysočina", "Kraj Vysočina (Moravské Budějovice, Telč)"),
+            ("Telč", "Kraj Vysočina (Moravské Budějovice, Telč)"),
+            ("Graz (Stadt)", "Graz (Stadt)"),
+            ("Stadt Frankfurt (Oder)", "Stadt Frankfurt (Oder)"),
+            ("Linz", "Linz (Land)"),
+        ]:
+            self.assertTrue(matches(province, area_desc), (province, area_desc))
+
+        for province, area_desc in [
+            ("Porto", "Porto Santo"),
+            ("Savoie", "Haute Savoie"),
+            ("Ceuta", "Costa - Ceuta"),
+            ("Este de La Palma", "Oeste de La Palma"),
+            ("Feldkirch", "Feldkirchen"),
+            ("Scotland", uk),
+            ("Rogaland", "Coast and fjords in Rogaland"),
+            ("Graz (Stadt)", "Graz (Land)"),
+            (".*", "Wales"),
+            ("", "Wales"),
+            ("Wales", None),
+        ]:
+            self.assertFalse(matches(province, area_desc), (province, area_desc))
+
+    def test_province_not_part_of_another(self):
+        """france_sample.xml warns both Savoie and Haute Savoie"""
+        entries = xmltodict.parse(read("france_sample.xml"))["feed"]["entry"]
+
+        def areas(province):
+            meteo = Meteoalert("France", province)
+            return {entry["cap:areaDesc"] for entry in entries
+                    if meteo.is_location_match(entry, province)}
+
+        self.assertEqual(areas("Savoie"), {"Savoie"})
+        self.assertEqual(areas("Haute Savoie"), {"Haute Savoie"})
 
     def test_server_not_reachable(self):
         meteo = Meteoalert("poland", "krakow", "en-US")
@@ -253,7 +305,7 @@ class TestMeteoalert(unittest.TestCase):
         # Trondheim is in none of them
         self.assertEqual(events(63.430, 10.395), [])
         # with a province too, alerts matching either are included
-        self.assertEqual(events(60.392, 5.324, "Rogaland"),
+        self.assertEqual(events(60.392, 5.324, "Coast and fjords in Rogaland"),
                          ["Coast and fjords in Hordaland", "Coast and fjords in Rogaland"])
 
     @requests_mock.mock()
@@ -261,7 +313,7 @@ class TestMeteoalert(unittest.TestCase):
         """The flood has two feed entries (one per area) sharing a CAP document"""
         self._register_norway(m)
 
-        alerts = Meteoalert("Norway", "stlandet").get_alerts()
+        alerts = Meteoalert("Norway", "deler av Østlandet").get_alerts()
         self.assertEqual([a["event"] for a in alerts], ["Flood"])
         cap_requests = [r for r in m.request_history if "15082db6" in r.url]
         self.assertEqual(len(cap_requests), 1)

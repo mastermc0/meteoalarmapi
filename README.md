@@ -18,7 +18,8 @@ pip install meteoalarmapi
 from meteoalarmapi import Meteoalert
 
 # Find your country and province on https://meteoalarm.org/ or https://feeds.meteoalarm.org/
-# The province can be its name (matched as a regular expression) or its EMMA_ID code.
+# The province is the area's whole name as the feed gives it (ignoring case), or
+# its EMMA_ID code. Part of a name doesn't match: 'Savoie' isn't 'Haute Savoie'.
 meteo = Meteoalert('united-kingdom', 'Highlands & Eilean Siar')
 
 # The most severe current alert, or {} when there is none
@@ -98,6 +99,7 @@ The alerts' CAP documents are fetched concurrently, and reading the geocodes fil
 - Alerts can be matched by a latitude and longitude inside the alert's area, for feeds without provinces (meteoalert-api#35) (0.5.0).
 - Points also match areas given only as EMMA_ID codes, using MeteoAlarm's geocodes file downloaded once by `update_geocodes()` (0.5.0).
 - An asyncio client, `AsyncMeteoalert`, on aiohttp with a session you pass in (`pip install "meteoalarmapi[async]"`) (0.6.0).
+- A province name must match a whole area name in the feed, not just part of one, so 'Porto' no longer gets the alerts for 'Porto Santo' (meteoalert-api#31). Names with brackets, such as 'Graz (Stadt)', now match. Before, the name was used as a regular expression (0.7.0).
 - `awareness_level`, `awareness_type` and the other CAP parameters are now included for feeds with a single language, such as the UK's. Before, they were silently dropped.
 - An alert listed several times in the feed (once per language or area) is returned and fetched only once.
 - Each alert includes the CAP `identifier`, `message_type`, `references` and `sent`.

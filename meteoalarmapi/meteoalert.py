@@ -370,8 +370,13 @@ class _MeteoalertBase:
         return moment <= _utcnow()
 
     def is_location_match(self, entry, province):
-        # Attempt to match the province first by regex on name
-        if re.search(rf"{province}", entry.get("cap:areaDesc") or "", re.IGNORECASE):
+        # Attempt to match the province first by name, as a whole area in the
+        # areaDesc list: "Savoie" doesn't match "Haute Savoie", nor "Ceuta"
+        # "Costa - Ceuta". Feeds separate areas with "," ";" or "|", and some
+        # add places in brackets: "Kraj Vysočina (Telč, Jihlava)".
+        name = re.escape(str(province).strip())
+        if name and re.search(rf"(?:^|[,;|()])\s*{name}\s*(?=[,;|()]|$)",
+                              entry.get("cap:areaDesc") or "", re.IGNORECASE):
             return True
 
         # then by areaCode

@@ -227,12 +227,12 @@ class TestAsyncMeteoalert(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await events(58.970, 5.733), ["Coast and fjords in Rogaland"])
         self.assertEqual(await events(59.668, 9.650), ["Flood"])
         self.assertEqual(await events(63.430, 10.395), [])
-        self.assertEqual(await events(60.392, 5.324, "Rogaland"),
+        self.assertEqual(await events(60.392, 5.324, "Coast and fjords in Rogaland"),
                          ["Coast and fjords in Hordaland", "Coast and fjords in Rogaland"])
 
     async def test_alert_fetched_once(self):
         self.register_norway()
-        alerts = await self.meteo("Norway", "stlandet").async_get_alerts()
+        alerts = await self.meteo("Norway", "deler av Østlandet").async_get_alerts()
         self.assertEqual([a["event"] for a in alerts], ["Flood"])
         self.assertEqual(cap_calls(self.m), ["15082db6"])
 
