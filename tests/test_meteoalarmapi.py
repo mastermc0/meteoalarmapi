@@ -344,6 +344,43 @@ class TestMeteoalert(unittest.TestCase):
         cap_requests = [r for r in m.request_history if "15082db6" in r.url]
         self.assertEqual(len(cap_requests), 1)
 
+    @requests_mock.mock()
+    def test_name_and_point_disagree(self, m):
+        """uk_ice_sample.xml (15 Nov 2026) has one ice warning naming seven
+        areas, with a polygon that covers only part of them: northern
+        Scotland and the far north of England, not Manchester, Newcastle or
+        the Western Isles. A name matches the whole area; a point only the
+        polygon, so the two disagree there."""
+        m.get("/feeds/meteoalarm-legacy-atom-united-kingdom", text=read("uk_ice_sample.xml"))
+        m.get(re.compile("/api/v1/warnings/feeds-united-kingdom/"),
+              text=read("uk_ice_sample_detail.xml"))
+
+        def events(province=None, point=(None, None)):
+            with clock("2026-11-15T20:00:00"):
+                alerts = Meteoalert("United-Kingdom", province, latitude=point[0],
+                                    longitude=point[1]).get_alerts()
+            return [a["event"] for a in alerts]
+
+        ice = ["Yellow ice warning"]
+        # name and point agree inside the polygon
+        self.assertEqual(events("Highlands & Eilean Siar"), ice)
+        self.assertEqual(events(point=(57.895, -5.160)), ice)  # Ullapool
+        self.assertEqual(events(point=(54.890, -2.930)), ice)  # Carlisle
+        # every named area matches by name
+        for area in ("North West England", "North East England", "Grampian",
+                     "SW Scotland, Lothian Borders"):
+            self.assertEqual(events(area), ice)
+        # but not every place in them is inside the polygon
+        for point in ((53.480, -2.240),   # Manchester, North West England
+                      (54.970, -1.610),   # Newcastle, North East England
+                      (58.210, -6.390)):  # Stornoway, Highlands & Eilean Siar
+            self.assertEqual(events(point=point), [])
+        # with both, either is enough, so the name brings the alert back
+        self.assertEqual(events("North West England", (53.480, -2.240)), ice)
+        # an area the warning doesn't name matches neither way
+        self.assertEqual(events("London & South East England"), [])
+        self.assertEqual(events(point=(51.510, -0.130)), [])  # London
+
     def test_location_required(self):
         self.assertRaises(ValueError, Meteoalert, "Norway")
         self.assertRaises(ValueError, Meteoalert, "Norway", latitude=59.9)
