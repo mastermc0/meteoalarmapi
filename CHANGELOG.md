@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## meteoalarmapi 0.8.0 - unreleased
+- Points now match feeds that give areas as NUTS or FIPS codes instead of EMMA_IDs: Belgium, Bulgaria, France, Romania, part of Croatia and part of Ireland (#28). Each feed entry's link names its EMMA_ID area (`https://meteoalarm.org?geocode=EMMA_ID:FR035`), and `emma_ids()` now reads it as well as the geocode, so `update_geocodes()` works there unchanged. Before, a point matched nothing in those countries, and in Ireland it missed the areas still given as FIPS codes. `geocodes_outdated` is also set for an unknown EMMA_ID in a link.
+- A province given as a code now also matches the EMMA_ID in an entry's link, so `BE006` matches Namur in Belgium's feed, whose geocode is the NUTS2 code `BE35`. Codes now match ignoring case and surrounding spaces, and when an entry has several geocodes.
+- Both `Meteoalert` and `AsyncMeteoalert` change.
+
 ## meteoalarmapi 0.7.0 - 2026-11-12
 - **Breaking:** a province name now matches only a whole area in the feed entry's `areaDesc` (ignoring case and spaces), where areas are separated by `,`, `;`, `|` or brackets. Before, the name was a regular expression searched anywhere in `areaDesc`, so 'Porto' also matched 'Porto Santo', 'Ceuta' matched 'Costa - Ceuta' and 'Feldkirch' matched 'Feldkirchen' (meteoalert-api#31): 130 pairs of areas in MeteoAlarm's geocodes file were confused this way. If you used part of a name, such as 'Rogaland' for 'Coast and fjords in Rogaland', use the whole name or the area's EMMA_ID code. Both `Meteoalert` and `AsyncMeteoalert` change.
 - Province names with brackets, such as 'Graz (Stadt)' or 'Stadt Frankfurt (Oder)', now match. Before, the brackets were read as regular expression syntax, so 27 areas could never be matched by name.

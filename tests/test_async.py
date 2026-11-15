@@ -132,6 +132,11 @@ class TestAsyncMeteoalert(unittest.IsolatedAsyncioTestCase):
         data = await self.meteo("France", "Haute Savoie", "fr-FR").async_get_alert()
         self.assertEqual(data["language"], "fr-FR")
         self.assertGreater(len(await self.meteo("France", "FR822").async_get_alert()), 0)
+        # the EMMA_ID in an entry's link, as a province or from geocodes (#28)
+        self.assertGreater(len(await self.meteo("France", "fr033").async_get_alert()), 0)
+        meteo = self.meteo("France", geocodes={"codes": ["FR035"], "known": ["FR035"]})
+        self.assertEqual(len(await meteo.async_get_alerts()), 2)
+        self.assertTrue(meteo.geocodes_outdated)
 
     async def test_get_alerts_order(self):
         self.register_multiple()

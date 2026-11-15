@@ -51,6 +51,11 @@ def clock(text):
     return mock.patch("meteoalarmapi.meteoalert._utcnow", return_value=utc(text))
 
 
+def cap_ids(m):
+    """The first 8 characters of each CAP document the mock was asked for"""
+    return [r.url.rsplit("/", 1)[-1][:8] for r in m.request_history if "/api/v1/warnings/" in r.url]
+
+
 def file_path(file_name):
     return os.path.join(os.path.dirname(__file__), file_name)
 
@@ -96,8 +101,11 @@ class TestMeteoalert(unittest.TestCase):
         # the French localised version
         data = Meteoalert("France", "Haute Savoie", "fr-FR").get_alert()
         self.assertEqual(data["language"], "fr-FR")
-        # by area code
-        self.assertGreater(len(Meteoalert("France", "FR822", "fr-FR").get_alert()), 0)
+        # by area code: the feed's NUTS3 code, or the EMMA_ID in the entry's
+        # link (Hautes Alpes is both), ignoring case
+        for code in ("FR822", "FR033", "fr033", " fr822 "):
+            data = Meteoalert("France", code, "fr-FR").get_alerts()
+            self.assertEqual(len(data), 2, code)
         self.assertEqual(Meteoalert("France", "FAKE").get_alert(), {})
 
     def test_province_matches_whole_area(self):
@@ -440,15 +448,60 @@ class TestMeteoalert(unittest.TestCase):
         self.assertTrue(meteo.geocodes_outdated)
 
     @requests_mock.mock()
-    def test_geocodes_ignore_other_codes(self, m):
-        """france_sample.xml has only NUTS3 codes, as Romania's and North
-        Macedonia's feeds do: geocodes can't match them, nor are they outdated"""
+    def test_geocodes_match_emma_ids_in_links(self, m):
+        """france_sample.xml gives areas only as NUTS3 codes, as Belgium's,
+        Romania's and Bulgaria's feeds do, but each entry's link names its
+        EMMA_ID: https://meteoalarm.org?geocode=EMMA_ID:FR035 (#28)"""
         m.get("/feeds/meteoalarm-legacy-atom-france", text=read("france_sample.xml"))
         m.get(re.compile("/api/v1/warnings/feeds-france/"), text=read("france_sample_detail.xml"))
+        france = ["FR029", "FR032", "FR033", "FR034", "FR035", "FR036"]
 
-        meteo = Meteoalert("France", geocodes={"codes": ["FR718"], "known": ["FR718"]})
-        self.assertEqual(meteo.get_alerts(), [])
+        # Haute Savoie (NUTS3 FR718) is in both CAP documents
+        meteo = Meteoalert("France", geocodes={"codes": ["FR035"], "known": france})
+        self.assertEqual(len(meteo.get_alerts()), 2)
+        self.assertEqual(sorted(cap_ids(m)), ["04d497d4", "2f32f9f9"])
         self.assertFalse(meteo.geocodes_outdated)
+
+        # a NUTS3 code isn't an EMMA_ID, so geocodes can't hold one
+        meteo = Meteoalert("France", geocodes={"codes": ["FR718"], "known": france})
+        self.assertEqual(meteo.get_alerts(), [])
+        # a link's EMMA_ID that geocodes don't know means they need updating
+        meteo = Meteoalert("France", geocodes={"codes": ["FR035"], "known": france[1:]})
+        meteo.get_alerts()
+        self.assertTrue(meteo.geocodes_outdated)
+
+    @requests_mock.mock()
+    def test_geocodes_match_fips_areas(self, m):
+        """ireland_sample.xml gives areas as FIPS codes, as part of Ireland's
+        feed still does: Cork (FIPS EI04) is EMMA_ID IE007 in its links"""
+        m.get("/feeds/meteoalarm-legacy-atom-ireland", text=read("ireland_sample.xml"))
+        m.get(re.compile("/api/v1/warnings/feeds-ireland/"), text=read("ireland_sample_detail.xml"))
+        entries = xmltodict.parse(read("ireland_sample.xml"))["feed"]["entry"]
+        known = sorted(set().union(*(Meteoalert.emma_ids(entry) for entry in entries)))
+
+        meteo = Meteoalert("Ireland", geocodes={"codes": ["IE007"], "known": known})
+        self.assertEqual(len(meteo.get_alerts()), 6)
+        self.assertEqual(sorted(cap_ids(m)), ["1f102fc1", "3a474d6b", "558830a2",
+                                              "5bb29452", "5e2aaa57", "a0ede961"])
+        self.assertFalse(meteo.geocodes_outdated)
+
+    def test_emma_ids(self):
+        def entry(geocode=None, *hrefs):
+            return {"cap:geocode": geocode, "link": [{"@href": href} for href in hrefs]}
+
+        self.assertEqual(Meteoalert.emma_ids(entry({"valueName": "EMMA_ID", "value": "ES098"})),
+                         {"ES098"})
+        self.assertEqual(Meteoalert.emma_ids(entry(
+            {"valueName": "NUTS2", "value": "BE35"},
+            "https://meteoalarm.org?geocode=EMMA_ID:BE006",
+            "https://feeds.meteoalarm.org/api/v1/warnings/feeds-belgium/1234")), {"BE006"})
+        # a single link, and links to other things
+        self.assertEqual(Meteoalert.emma_ids({"link": {
+            "@href": "https://meteoalarm.org?geocode=EMMA_ID:RO025"}}), {"RO025"})
+        self.assertEqual(Meteoalert.emma_ids(entry(
+            None, "https://meteoalarm.org?polygon=ef68e1fd,1,0,0", "https://meteoalarm.org")),
+            set())
+        self.assertEqual(Meteoalert.emma_ids({}), set())
 
     @requests_mock.mock()
     def test_update_geocodes(self, m):
