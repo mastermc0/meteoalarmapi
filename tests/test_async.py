@@ -189,6 +189,27 @@ class TestAsyncMeteoalert(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ServerError):
             await meteo.async_get_alerts()
 
+    async def test_unexpected_responses(self):
+        """A 200 that isn't a feed or CAP document raises UnexpectedError, as
+        with Meteoalert"""
+        meteo = self.meteo("United-Kingdom", "Highlands & Eilean Siar")
+        self.respond(FEED + "united-kingdom", body="<html><body>Back soon<br></body></html>",
+                     repeat=False)
+        with self.assertRaisesRegex(UnexpectedError, "not XML"):
+            await meteo.async_get_alerts()
+        self.respond(FEED + "united-kingdom", body="<html><body>Back soon</body></html>",
+                     repeat=False)
+        with self.assertRaisesRegex(UnexpectedError, "<html> instead of <feed>"):
+            await meteo.async_suggest_areas()
+        self.respond(FEED + "united-kingdom", body=b"<feed>\xff\xfe</feed>", repeat=False)
+        with self.assertRaisesRegex(UnexpectedError, "not UTF-8"):
+            await meteo.async_get_alerts()
+
+        self.respond(WARNINGS + "united-kingdom/" + MULTIPLE[1][0], body="<alert><info>")
+        self.register_multiple()
+        with self.assertRaisesRegex(UnexpectedError, "not XML"):
+            await meteo.async_get_alerts()
+
     async def test_feed_not_found(self):
         self.respond(FEED + "atlantis", status=404)
         with self.assertRaisesRegex(WrongCountry, "'atlantis'.*temporarily unavailable"):

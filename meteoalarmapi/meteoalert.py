@@ -10,6 +10,7 @@ client here (Meteoalert) and the aiohttp one in aio.py (AsyncMeteoalert).
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from xml.parsers.expat import ExpatError
 
 import requests
 import xmltodict
@@ -109,6 +110,29 @@ def _check_status(status_code):
         raise ServerError(f"Server error - status code: {status_code}")
     if status_code != 200:
         raise UnexpectedError(f"Server returned unexpected status code: {status_code}")
+
+
+def _decode(content, url):
+    """A response body as text, raising UnexpectedError when it isn't UTF-8"""
+    try:
+        return content.decode("utf-8")
+    except UnicodeDecodeError as err:
+        raise UnexpectedError(f"Unexpected response from {url}, not UTF-8: {err}") from err
+
+
+def _parse_xml(text, root):
+    """The content of an XML document's root element, which must be root.
+
+    Raises UnexpectedError for anything else, such as a maintenance page or a
+    cut-off download, so callers only see the library's exceptions."""
+    try:
+        document = xmltodict.parse(text)
+    except ExpatError as err:
+        raise UnexpectedError(f"Unexpected response from MeteoAlarm, not XML: {err}") from err
+    if root not in document:
+        found = next(iter(document), None)
+        raise UnexpectedError(f"Unexpected response from MeteoAlarm: <{found}> instead of <{root}>")
+    return document[root]
 
 
 def _get(url):
@@ -219,7 +243,8 @@ def update_geocodes(latitude, longitude, geocodes=None, outdated=False):
 
     if same_point and geocodes.get("version") == version:
         return _rechecked(geocodes)
-    text = _get(GEOCODES_FILE.format(ref=ref, name=version)).content.decode("utf-8")
+    url = GEOCODES_FILE.format(ref=ref, name=version)
+    text = _decode(_get(url).content, url)
     return resolve_geocodes(*point, text, version)
 
 
@@ -280,8 +305,7 @@ class _MeteoalertBase:
     def _cap_urls(self, feed_text):
         """The CAP document URLs of the feed entries matching the location, in
         feed order. Also sets geocodes_outdated."""
-        feed = xmltodict.parse(feed_text)
-        entries = (feed.get("feed") or {}).get("entry", [])
+        entries = (_parse_xml(feed_text, "feed") or {}).get("entry", [])
         if not isinstance(entries, list):
             entries = [entries]
 
@@ -326,7 +350,7 @@ class _MeteoalertBase:
     def _parse_cap(self, text):
         """The CAP <info> in the requested language (or the first one) as a dict,
         plus the message fields needed to track an alert across updates"""
-        alert = xmltodict.parse(text).get("alert", {})
+        alert = _parse_xml(text, "alert") or {}
         infos = alert.get("info", [])
         if not isinstance(infos, list):
             infos = [infos]
@@ -379,7 +403,7 @@ class _MeteoalertBase:
         text = str(self.province if name is None else name).strip().casefold()
         if not text:
             return []
-        entries = (xmltodict.parse(feed_text).get("feed") or {}).get("entry") or []
+        entries = (_parse_xml(feed_text, "feed") or {}).get("entry") or []
         if not isinstance(entries, list):
             entries = [entries]
         areas = {}
@@ -499,4 +523,4 @@ class Meteoalert(_MeteoalertBase):
             raise UnexpectedError(str(err)) from err
         if self._is_missing(response.status_code, missing_ok):
             return None
-        return response.content.decode("utf-8")
+        return _decode(response.content, url)
