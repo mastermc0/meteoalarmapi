@@ -18,6 +18,7 @@ from .meteoalert import (
     ServerError,
     UnexpectedError,
     _check_status,
+    _decode,
     _is_fresh,
     _is_same_point,
     _MeteoalertBase,
@@ -60,7 +61,7 @@ async def _latest_geocodes_name(session):
 
 
 def _decode_and_resolve(point, body, version):
-    return resolve_geocodes(*point, body.decode("utf-8"), version)
+    return resolve_geocodes(*point, _decode(body, version), version)
 
 
 async def async_update_geocodes(session, latitude, longitude, geocodes=None, outdated=False):
@@ -131,4 +132,4 @@ class AsyncMeteoalert(_MeteoalertBase):
         status, body = await _request(self.session, url)
         if self._is_missing(status, missing_ok):
             return None
-        return body.decode("utf-8")
+        return _decode(body, url)

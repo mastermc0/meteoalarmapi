@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## meteoalarmapi 0.7.1 - unreleased
+- A response that isn't a valid feed or CAP document, such as a maintenance page, an empty or cut-off download, or text that isn't UTF-8, now raises `UnexpectedError`. Before, the XML parser's `ExpatError` or a `UnicodeDecodeError` came through instead, so a caller catching the library's exceptions (as Home Assistant does) missed it. A CAP document whose root isn't `<alert>` also raises, where it used to give an empty alert. Both `Meteoalert` and `AsyncMeteoalert` change, and `update_geocodes()` raises `UnexpectedError` for a geocodes file that isn't UTF-8.
+
 ## meteoalarmapi 0.7.0 - 2026-11-12
 - **Breaking:** a province name now matches only a whole area in the feed entry's `areaDesc` (ignoring case and spaces), where areas are separated by `,`, `;`, `|` or brackets. Before, the name was a regular expression searched anywhere in `areaDesc`, so 'Porto' also matched 'Porto Santo', 'Ceuta' matched 'Costa - Ceuta' and 'Feldkirch' matched 'Feldkirchen' (meteoalert-api#31): 130 pairs of areas in MeteoAlarm's geocodes file were confused this way. If you used part of a name, such as 'Rogaland' for 'Coast and fjords in Rogaland', use the whole name or the area's EMMA_ID code. Both `Meteoalert` and `AsyncMeteoalert` change.
 - Province names with brackets, such as 'Graz (Stadt)' or 'Stadt Frankfurt (Oder)', now match. Before, the brackets were read as regular expression syntax, so 27 areas could never be matched by name.

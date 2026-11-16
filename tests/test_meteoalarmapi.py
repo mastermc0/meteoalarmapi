@@ -286,6 +286,44 @@ class TestMeteoalert(unittest.TestCase):
         self.assertRaises(ServerError, meteo.get_alerts)
 
     @requests_mock.mock()
+    def test_unexpected_feed(self, m):
+        """A 200 that isn't a feed, such as a maintenance page or a cut-off
+        download, raises UnexpectedError, not a parser's own exception"""
+        feed = "/feeds/meteoalarm-legacy-atom-united-kingdom"
+        meteo = Meteoalert("United-Kingdom", "Highlands & Eilean Siar")
+        cases = {
+            "not XML": "<html><body>Back soon<br></body></html>",
+            "<html> instead of <feed>": "<html><body>Back soon</body></html>",
+            "not XML: no element found": "",
+            "not XML: ": read("uk_multiple_sample.xml")[:2000],
+        }
+        for message, text in cases.items():
+            m.get(feed, text=text)
+            with self.assertRaisesRegex(UnexpectedError, message):
+                meteo.get_alerts()
+            with self.assertRaisesRegex(UnexpectedError, message):
+                meteo.suggest_areas()
+
+        m.get(feed, content=b"<feed>\xff\xfe</feed>")
+        with self.assertRaisesRegex(UnexpectedError, "not UTF-8"):
+            meteo.get_alerts()
+
+        # a feed without warnings is still fine
+        m.get(feed, text='<feed xmlns="http://www.w3.org/2005/Atom"></feed>')
+        self.assertEqual(meteo.get_alerts(), [])
+        self.assertEqual(meteo.suggest_areas(), [])
+
+    @requests_mock.mock()
+    def test_unexpected_cap_document(self, m):
+        self._register_multiple(m)
+        cap = "/api/v1/warnings/feeds-united-kingdom/" + MULTIPLE[1][0]
+        meteo = Meteoalert("United-Kingdom", "Highlands & Eilean Siar")
+        m.get(cap, text="<alert><info>")
+        self.assertRaisesRegex(UnexpectedError, "not XML", meteo.get_alerts)
+        m.get(cap, text="<html><body>Back soon</body></html>")
+        self.assertRaisesRegex(UnexpectedError, "<html> instead of <alert>", meteo.get_alerts)
+
+    @requests_mock.mock()
     def test_feed_not_found(self, m):
         m.get("/feeds/meteoalarm-legacy-atom-atlantis", status_code=404)
         with self.assertRaisesRegex(WrongCountry, "'atlantis'.*temporarily unavailable"):
