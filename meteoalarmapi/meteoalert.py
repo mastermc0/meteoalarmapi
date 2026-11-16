@@ -31,6 +31,8 @@ class UnexpectedError(Exception):
 # CAP severities, least to most severe
 SEVERITIES = ["Unknown", "Minor", "Moderate", "Severe", "Extreme"]
 TIMEOUT = 10
+# A feed entry's link to its area: https://meteoalarm.org?geocode=EMMA_ID:FR035
+LINK_EMMA_ID = re.compile(r"[?&]geocode=EMMA_ID:(\w+)")
 
 
 def _utcnow():
@@ -422,9 +424,16 @@ class _MeteoalertBase:
                               entry.get("cap:areaDesc") or "", re.IGNORECASE):
             return True
 
-        # then by areaCode
-        geocode = entry.get("cap:geocode")
-        return isinstance(geocode, dict) and geocode.get("value") == province
+        # then by code, ignoring case: the entry's geocode (EMMA_ID, NUTS or
+        # FIPS) or the EMMA_ID in its link
+        code = str(province).strip().casefold()
+        geocodes = entry.get("cap:geocode") or []
+        if not isinstance(geocodes, list):
+            geocodes = [geocodes]
+        codes = {str(geocode.get("value")).casefold() for geocode in geocodes
+                 if isinstance(geocode, dict)}
+        codes |= {emma_id.casefold() for emma_id in self.emma_ids(entry)}
+        return bool(code) and code in codes
 
     @staticmethod
     def is_point_match(entry, point):
@@ -436,12 +445,24 @@ class _MeteoalertBase:
 
     @staticmethod
     def emma_ids(entry):
-        """The entry's EMMA_ID codes (feeds also use FIPS and NUTS3 codes)"""
+        """The entry's EMMA_ID codes, from its geocodes and its links.
+
+        Some feeds give an area's geocode only as a NUTS or FIPS code
+        (France, Belgium, Romania, Ireland...), but every entry's link names
+        its EMMA_ID too: https://meteoalarm.org?geocode=EMMA_ID:FR035
+        """
         geocodes = entry.get("cap:geocode") or []
         if not isinstance(geocodes, list):
             geocodes = [geocodes]
-        return {geocode.get("value") for geocode in geocodes
-                if isinstance(geocode, dict) and geocode.get("valueName") == "EMMA_ID"}
+        codes = {geocode.get("value") for geocode in geocodes
+                 if isinstance(geocode, dict) and geocode.get("valueName") == "EMMA_ID"}
+        links = entry.get("link") or []
+        if not isinstance(links, list):
+            links = [links]
+        for link in links:
+            if isinstance(link, dict):
+                codes.update(LINK_EMMA_ID.findall(link.get("@href") or ""))
+        return codes
 
     def _is_missing(self, status_code, missing_ok):
         """True for a 404/410 when missing_ok; raises for any other non-200"""

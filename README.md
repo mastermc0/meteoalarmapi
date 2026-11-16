@@ -44,7 +44,7 @@ print(meteo.get_alerts())
 
 This works for any feed that includes polygons, including the UK's. With both a province and a point, you get alerts matching either.
 
-Most other feeds, such as Spain's and Germany's, give each area only as an EMMA_ID code. To match those by point too, look up the point's EMMA_ID area once with `update_geocodes()`, store what it returns, and pass it in:
+Most other feeds, such as Spain's and Germany's, give each area only as an EMMA_ID code. Some, such as France's and Belgium's, give a NUTS or FIPS code instead, but every entry's link still names its EMMA_ID, so they work the same way. To match those by point too, look up the point's EMMA_ID area once with `update_geocodes()`, store what it returns, and pass it in:
 
 ```python
 from meteoalarmapi import update_geocodes
@@ -105,6 +105,7 @@ The alerts' CAP documents are fetched concurrently, and reading the geocodes fil
 - Points also match areas given only as EMMA_ID codes, using MeteoAlarm's geocodes file downloaded once by `update_geocodes()` (0.5.0).
 - An asyncio client, `AsyncMeteoalert`, on aiohttp with a session you pass in (`pip install "meteoalarmapi[async]"`) (0.6.0).
 - A province name must match a whole area name in the feed, not just part of one, so 'Porto' no longer gets the alerts for 'Porto Santo' (meteoalert-api#31). Names with brackets, such as 'Graz (Stadt)', now match. Before, the name was used as a regular expression. `suggest_areas()` lists the whole names in the feed that contain a partial one (0.7.0).
+- Points and EMMA_ID codes also match feeds that give areas as NUTS or FIPS codes, such as France's, Belgium's and Romania's, using the EMMA_ID in each entry's link (0.8.0).
 - `awareness_level`, `awareness_type` and the other CAP parameters are now included for feeds with a single language, such as the UK's. Before, they were silently dropped.
 - An alert listed several times in the feed (once per language or area) is returned and fetched only once.
 - Each alert includes the CAP `identifier`, `message_type`, `references` and `sent`.

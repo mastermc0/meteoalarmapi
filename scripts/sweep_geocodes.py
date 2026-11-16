@@ -8,10 +8,12 @@ file; it needs the network, so it isn't part of the tests:
 Without a path it downloads the newest file (33 MB). It reports:
 - areas: whether a point inside each area resolves to that area. Nested
   areas (such as Lithuania's municipalities in counties) show as overlaps.
-- feeds: for each country, the codes its feed uses, any EMMA_IDs missing from
+- feeds: for each country, the codes its feed uses, the entries with neither
+  a polygon nor an EMMA_ID (in a geocode or a link), any EMMA_IDs missing from
   the file, and an end-to-end get_alerts() for one warned area with no polygon.
 
-It exits with 1 when an area or a warned area can't be matched by a point.
+It exits with 1 when an area, a warned area or a feed entry can't be matched
+by a point.
 """
 
 import collections
@@ -125,15 +127,21 @@ def sweep_feed(country, areas):
             if isinstance(geocode, dict):
                 kinds[geocode.get("valueName")] += 1
     with_polygon = sum(bool(entry.get("cap:polygon")) for entry in entries)
+    # EMMA_IDs from the geocodes and the links (NUTS and FIPS feeds have them
+    # only in the links)
     codes = set().union(*(Meteoalert.emma_ids(entry) for entry in entries))
     missing = sorted(code for code in codes if code not in areas)
+    # entries a point can never match
+    unmatchable = sum(not entry.get("cap:polygon") and not Meteoalert.emma_ids(entry)
+                      for entry in entries)
 
     line = (f"{country:27} entries={len(entries):3} polygons={with_polygon:3} "
-            f"codes={dict(kinds)} missing from file={missing}")
+            f"codes={dict(kinds)} no polygon or EMMA_ID={unmatchable} "
+            f"missing from file={missing}")
     warned = sorted(code for code in codes - set(missing) if any(
         code in Meteoalert.emma_ids(entry) and not entry.get("cap:polygon") for entry in entries))
     if not warned:
-        return line, False
+        return line, bool(unmatchable)
 
     point = interior_point(areas[warned[0]][1])
     found = areas_at(point, areas)
@@ -143,7 +151,7 @@ def sweep_feed(country, areas):
                        geocodes={"codes": found, "known": known})
     alerts = meteo.get_alerts()
     line += f" | {warned[0]}: {len(alerts)} alert(s), outdated={meteo.geocodes_outdated}"
-    return line, not alerts
+    return line, not alerts or bool(unmatchable)
 
 
 def main(path=None):
