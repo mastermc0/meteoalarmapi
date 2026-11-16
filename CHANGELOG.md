@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## meteoalarmapi 0.7.1 - unreleased
+## meteoalarmapi 0.7.1 - 2026-11-16
 - A response that isn't a valid feed or CAP document, such as a maintenance page, an empty or cut-off download, or text that isn't UTF-8, now raises `UnexpectedError`. Before, the XML parser's `ExpatError` or a `UnicodeDecodeError` came through instead, so a caller catching the library's exceptions (as Home Assistant does) missed it. A CAP document whose root isn't `<alert>` also raises, where it used to give an empty alert. Both `Meteoalert` and `AsyncMeteoalert` change, and `update_geocodes()` raises `UnexpectedError` for a geocodes file that isn't UTF-8.
 
 ## meteoalarmapi 0.7.0 - 2026-11-12
