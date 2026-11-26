@@ -100,8 +100,9 @@ class AsyncMeteoalert(_MeteoalertBase):
     """
 
     def __init__(self, country, province=None, language="en-GB",
-                 latitude=None, longitude=None, geocodes=None, *, session):
-        super().__init__(country, province, language, latitude, longitude, geocodes)
+                 latitude=None, longitude=None, geocodes=None, *, session, partial=False):
+        super().__init__(country, province, language, latitude, longitude, geocodes,
+                         partial=partial)
         self.session = session
 
     async def async_get_alert(self):

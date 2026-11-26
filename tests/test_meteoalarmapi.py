@@ -171,6 +171,53 @@ class TestMeteoalert(unittest.TestCase):
         self.assertEqual(meteo.suggest_areas("  "), [])
 
     @requests_mock.mock()
+    def test_partial_name(self, m):
+        """A partial name matches nothing, but partial_areas lists the areas
+        containing it, and partial=True matches them too"""
+        self._register_norway(m)
+        meteo = Meteoalert("Norway", "Rogaland")
+        self.assertEqual(meteo.get_alerts(), [])
+        self.assertFalse(meteo.province_matched)
+        self.assertEqual(meteo.partial_areas, ["Coast and fjords in Rogaland"])
+
+        meteo = Meteoalert("Norway", "rogaland", partial=True)
+        self.assertEqual([a["event"] for a in meteo.get_alerts()], ["High water level"])
+        self.assertFalse(meteo.province_matched)
+        self.assertEqual(meteo.partial_areas, ["Coast and fjords in Rogaland"])
+        self.assertEqual(cap_ids(m)[-1:], ["ef68e1fd"])
+
+        meteo = Meteoalert("Norway", "Coast and fjords", partial=True)
+        self.assertEqual(len(meteo.get_alerts()), 2)
+        self.assertEqual(meteo.partial_areas,
+                         ["Coast and fjords in Hordaland", "Coast and fjords in Rogaland"])
+
+    @requests_mock.mock()
+    def test_whole_name_not_partial(self, m):
+        """A whole name is matched and not listed in partial_areas; an area
+        containing it still is"""
+        self._register_norway(m)
+        meteo = Meteoalert("Norway", " Coast and fjords in Rogaland ", partial=True)
+        self.assertEqual(len(meteo.get_alerts()), 1)
+        self.assertTrue(meteo.province_matched)
+        self.assertEqual(meteo.partial_areas, [])
+
+        m.get("/feeds/meteoalarm-legacy-atom-france", text=read("france_sample.xml"))
+        m.get(re.compile("/api/v1/warnings/feeds-france/"), text=read("france_sample_detail.xml"))
+        meteo = Meteoalert("France", "Savoie")
+        meteo.get_alerts()
+        self.assertTrue(meteo.province_matched)
+        self.assertEqual(meteo.partial_areas, ["Haute Savoie"])
+
+    @requests_mock.mock()
+    def test_partial_without_province(self, m):
+        """With only a point, there's no name to match part of"""
+        self._register_norway(m)
+        meteo = Meteoalert("Norway", latitude=58.970, longitude=5.733, partial=True)
+        self.assertEqual([a["event"] for a in meteo.get_alerts()], ["High water level"])
+        self.assertFalse(meteo.province_matched)
+        self.assertEqual(meteo.partial_areas, [])
+
+    @requests_mock.mock()
     def test_suggested_areas_match(self, m):
         """Each suggestion is a whole area, so it matches as the province, even
         in the UK's lists with commas inside names"""

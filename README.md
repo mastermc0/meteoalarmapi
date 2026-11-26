@@ -33,6 +33,12 @@ for alert in meteo.get_alerts():
 # ['Coast and fjords in Rogaland'] for 'Rogaland'. The feed only lists areas
 # that have a warning now, so an empty list doesn't mean a name is wrong.
 print(Meteoalert('norway', 'Rogaland').suggest_areas())
+
+# Also match the areas whose names contain the province, as before 0.7.0.
+# After get_alerts(), partial_areas lists those areas, and province_matched
+# says whether the province matched as a whole name or code.
+meteo = Meteoalert('norway', 'Rogaland', partial=True)
+print(meteo.get_alerts(), meteo.province_matched, meteo.partial_areas)
 ```
 
 Some countries, such as Norway, don't name provinces in their feed and only give each alert's area as a polygon. For those, give a latitude and longitude instead. You get the alerts whose area contains that point:
@@ -104,7 +110,7 @@ The alerts' CAP documents are fetched concurrently, and reading the geocodes fil
 - Alerts can be matched by a latitude and longitude inside the alert's area, for feeds without provinces (meteoalert-api#35) (0.5.0).
 - Points also match areas given only as EMMA_ID codes, using MeteoAlarm's geocodes file downloaded once by `update_geocodes()` (0.5.0).
 - An asyncio client, `AsyncMeteoalert`, on aiohttp with a session you pass in (`pip install "meteoalarmapi[async]"`) (0.6.0).
-- A province name must match a whole area name in the feed, not just part of one, so 'Porto' no longer gets the alerts for 'Porto Santo' (meteoalert-api#31). Names with brackets, such as 'Graz (Stadt)', now match. Before, the name was used as a regular expression. `suggest_areas()` lists the whole names in the feed that contain a partial one (0.7.0).
+- A province name must match a whole area name in the feed, not just part of one, so 'Porto' no longer gets the alerts for 'Porto Santo' (meteoalert-api#31). Names with brackets, such as 'Graz (Stadt)', now match. Before, the name was used as a regular expression. `suggest_areas()` lists the whole names in the feed that contain a partial one (0.7.0). `partial=True` brings back matching part of a name, when asked for (0.9.0).
 - Points and EMMA_ID codes also match feeds that give areas as NUTS or FIPS codes, such as France's, Belgium's and Romania's, using the EMMA_ID in each entry's link (0.8.0).
 - `awareness_level`, `awareness_type` and the other CAP parameters are now included for feeds with a single language, such as the UK's. Before, they were silently dropped.
 - An alert listed several times in the feed (once per language or area) is returned and fetched only once.
