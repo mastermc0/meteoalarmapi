@@ -276,7 +276,7 @@ class _MeteoalertBase:
     endpoint = "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-{0}"
 
     def __init__(self, country, province=None, language="en-GB",
-                 latitude=None, longitude=None, geocodes=None):
+                 latitude=None, longitude=None, geocodes=None, *, partial=False):
         """Alerts for a province (name or EMMA_ID code), a point, or both.
 
         latitude/longitude match alerts whose area polygon contains the point,
@@ -287,6 +287,14 @@ class _MeteoalertBase:
         those by point too, pass geocodes from update_geocodes(). After
         get_alerts(), geocodes_outdated is True when the feed had an EMMA_ID
         that geocodes doesn't know, a sign to call update_geocodes() again.
+
+        A province name matches only a whole area name. With partial=True, it
+        also matches the areas whose names contain it, as it did before 0.7.0,
+        such as 'Coast and fjords in Rogaland' for 'Rogaland'. After
+        get_alerts(), province_matched is True when a feed entry matched the
+        province as a whole name or code, and partial_areas lists the areas
+        in the feed whose names contain the province (whatever partial is).
+        Together they tell when a name is likely only part of an area name.
         """
         if (latitude is None) != (longitude is None):
             raise ValueError("latitude and longitude must be given together")
@@ -298,6 +306,9 @@ class _MeteoalertBase:
         self.point = None if latitude is None else (float(latitude), float(longitude))
         self.geocodes = geocodes
         self.geocodes_outdated = False
+        self.partial = partial
+        self.province_matched = False
+        self.partial_areas = []
 
     def _feed_url(self):
         return self.endpoint.format(self.country)
@@ -312,6 +323,8 @@ class _MeteoalertBase:
         codes = set((self.geocodes or {}).get("codes") or [])
         known = set((self.geocodes or {}).get("known") or [])
         self.geocodes_outdated = False
+        self.province_matched = False
+        partial_areas = {}
 
         # The feed has an entry per language and area of an alert, all
         # pointing at the same CAP document, so list each one once.
@@ -322,7 +335,14 @@ class _MeteoalertBase:
             # a code missing from geocodes means they need updating
             if not entry.get("cap:polygon") and not emma_ids <= known:
                 self.geocodes_outdated = True
-            if not (self.province is not None and self.is_location_match(entry, self.province)
+            province_match = (self.province is not None
+                              and self.is_location_match(entry, self.province))
+            self.province_matched |= province_match
+            containing = self._containing_areas(entry, self.province)
+            for area in containing:
+                partial_areas.setdefault(area.casefold(), area)
+            if not (province_match
+                    or self.partial and containing
                     or self.point is not None and self.is_point_match(entry, self.point)
                     or emma_ids & codes):
                 continue
@@ -333,6 +353,7 @@ class _MeteoalertBase:
                             if link.get("@type") == "application/cap+xml"), None)
             if cap_url and cap_url not in urls:
                 urls.append(cap_url)
+        self.partial_areas = sorted(partial_areas.values(), key=str.casefold)
         return urls
 
     def _ranked(self, cap_texts, include_expired):
@@ -400,19 +421,30 @@ class _MeteoalertBase:
 
         Each is a whole area as is_location_match() splits areaDesc, so it
         matches when used as the province."""
-        text = str(self.province if name is None else name).strip().casefold()
-        if not text:
-            return []
         entries = (_parse_xml(feed_text, "feed") or {}).get("entry") or []
         if not isinstance(entries, list):
             entries = [entries]
         areas = {}
         for entry in entries:
-            for area in re.split(r"[,;|()]", entry.get("cap:areaDesc") or ""):
-                area = area.strip()
-                if text in area.casefold():
-                    areas.setdefault(area.casefold(), area)
+            for area in self._containing_areas(
+                    entry, self.province if name is None else name, exclude_whole=False):
+                areas.setdefault(area.casefold(), area)
         return sorted(areas.values(), key=str.casefold)
+
+    @staticmethod
+    def _containing_areas(entry, name, exclude_whole=True):
+        """The whole areas in an entry's areaDesc whose names contain name,
+        ignoring case, leaving out one that is name itself unless
+        exclude_whole is False"""
+        text = str("" if name is None else name).strip().casefold()
+        if not text:
+            return []
+        areas = []
+        for area in re.split(r"[,;|()]", entry.get("cap:areaDesc") or ""):
+            area = area.strip()
+            if text in area.casefold() and not (exclude_whole and area.casefold() == text):
+                areas.append(area)
+        return areas
 
     def is_location_match(self, entry, province):
         # Attempt to match the province first by name, as a whole area in the

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## meteoalarmapi 0.9.0 - Unreleased
+- Added `partial=True` to `Meteoalert` and `AsyncMeteoalert`: a province name then also matches the areas whose names contain it, as before 0.7.0, such as 'Coast and fjords in Rogaland' for 'Rogaland'. It's off by default, so matching is unchanged. It reads the same feed, so it makes no extra requests.
+- After `get_alerts()`, `province_matched` is True when an entry matched the province as a whole name or code, and `partial_areas` lists the areas in the feed whose names contain the province, whether or not `partial` is set. With `province_matched` False and `partial_areas` not empty, the name is probably only part of an area name: Home Assistant uses this to raise a repair and keep the warnings until it's fixed. Both `Meteoalert` and `AsyncMeteoalert` change.
+
 ## meteoalarmapi 0.8.0 - 2026-11-16
 - Points now match feeds that give areas as NUTS or FIPS codes instead of EMMA_IDs: Belgium, Bulgaria, France, Romania, part of Croatia and part of Ireland (#28). Each feed entry's link names its EMMA_ID area (`https://meteoalarm.org?geocode=EMMA_ID:FR035`), and `emma_ids()` now reads it as well as the geocode, so `update_geocodes()` works there unchanged. Before, a point matched nothing in those countries, and in Ireland it missed the areas still given as FIPS codes. `geocodes_outdated` is also set for an unknown EMMA_ID in a link.
 - A province given as a code now also matches the EMMA_ID in an entry's link, so `BE006` matches Namur in Belgium's feed, whose geocode is the NUTS2 code `BE35`. Codes now match ignoring case and surrounding spaces, and when an entry has several geocodes.
