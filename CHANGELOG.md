@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## meteoalarmapi 0.9.0 - Unreleased
+## meteoalarmapi 0.9.0 - 2026-11-26
 - Added `partial=True` to `Meteoalert` and `AsyncMeteoalert`: a province name then also matches the areas whose names contain it, as before 0.7.0, such as 'Coast and fjords in Rogaland' for 'Rogaland'. It's off by default, so matching is unchanged. It reads the same feed, so it makes no extra requests.
 - After `get_alerts()`, `province_matched` is True when an entry matched the province as a whole name or code, and `partial_areas` lists the areas in the feed whose names contain the province, whether or not `partial` is set. With `province_matched` False and `partial_areas` not empty, the name is probably only part of an area name: Home Assistant uses this to raise a repair and keep the warnings until it's fixed. Both `Meteoalert` and `AsyncMeteoalert` change.
 
